@@ -8,12 +8,37 @@ con is still pre-release, so entries may group related beta work while the produ
 
 ### Changed
 
+**Agent panel**
+
+- Agent activity appears in one compact summary, without repeated loading
+  indicators or competing divider lines. Tool details wrap below the action
+  label, and session controls fit narrow panels. _(PR
+  [#464](https://github.com/nowledge-co/con-terminal/pull/464) by
+  [@wey-gu](https://github.com/wey-gu))_
+
+**Window chrome**
+
+- Sidebars and the bottom input bar share the titlebar's translucent material,
+  with quieter, consistent edges around the terminal. Window Chrome adjusts
+  these areas together; Terminal Glass stays independent. _(PR
+  [#464](https://github.com/nowledge-co/con-terminal/pull/464) by
+  [@wey-gu](https://github.com/wey-gu))_
+
 **App icons**
 
 - Tail A6 is now the default app icon across macOS, Windows, and Linux,
   including Flatpak packages. Previously saved icon choices stay unchanged;
   Classic remains available in Settings → Appearance. _(PR
   [#462](https://github.com/nowledge-co/con-terminal/pull/462) by
+  [@wey-gu](https://github.com/wey-gu))_
+
+### Fixed
+
+**Agent panel**
+
+- Approval buttons stay visible when the tool area sizes itself to its
+  contents, while longer tool output remains scrollable. _(PR
+  [#464](https://github.com/nowledge-co/con-terminal/pull/464) by
   [@wey-gu](https://github.com/wey-gu))_
 
 ### Added
@@ -24,7 +49,8 @@ con is still pre-release, so entries may group related beta work while the produ
   saving also updates the user launcher icon outside Flatpak; desktops may
   cache the old image. Windows pinned shortcuts keep the installed icon,
   and Wayland does not yet support live window previews. _(PR
-  [#462](https://github.com/nowledge-co/con-terminal/pull/462) by
+  [#462](https://github.com/nowledge-co/con-terminal/pull/462),
+  [#463](https://github.com/nowledge-co/con-terminal/pull/463) by
   [@wey-gu](https://github.com/wey-gu))_
 
 ## `v0.1.0-beta.124` - 2026-10-10
