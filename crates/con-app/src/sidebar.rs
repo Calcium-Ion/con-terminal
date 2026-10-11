@@ -15,7 +15,7 @@
 //!   blended into background at small intensities), not borders.
 
 use crate::activity_bar::ActivitySlot;
-use crate::motion::MotionValue;
+use crate::motion::SidebarMotion;
 use crate::ui_scale::{ui_icon_px, ui_px};
 use con_core::terminal_status::Status;
 use gpui::{
@@ -32,7 +32,6 @@ use gpui_component::{
 };
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
-use std::time::Duration;
 
 /// Width of the always-visible icon rail in collapsed mode.
 pub const RAIL_WIDTH: f32 = 44.0;
@@ -56,18 +55,14 @@ const RAIL_SELECTION_SIZE: f32 = 32.0;
 const RAIL_ICON_GAP: f32 = 2.0;
 const RAIL_BUTTON_SIZE: f32 = 28.0;
 const RAIL_DIVIDER_HEIGHT: f32 = 5.0;
+const RAIL_SESSIONS_GAP: f32 = 12.0;
 const RAIL_TOP_CONTROL_COUNT: f32 = 4.0;
 const RAIL_TOP_DIVIDER_COUNT: f32 = 2.0;
-const RAIL_TOP_GAP_COUNT_BEFORE_SESSIONS: f32 = 6.0;
+const RAIL_TOP_GAP_COUNT_BEFORE_SESSIONS: f32 = 7.0;
 const RAIL_TOP_CONTROLS_HEIGHT: f32 = RAIL_BUTTON_SIZE * RAIL_TOP_CONTROL_COUNT
     + RAIL_DIVIDER_HEIGHT * RAIL_TOP_DIVIDER_COUNT
-    + RAIL_ICON_GAP * RAIL_TOP_GAP_COUNT_BEFORE_SESSIONS;
-
-/// Cubic ease-out feel for the panel width animation.
-#[cfg(not(target_os = "macos"))]
-const PANEL_TWEEN: Duration = Duration::from_millis(220);
-#[cfg(target_os = "macos")]
-const PANEL_TWEEN: Duration = Duration::ZERO;
+    + RAIL_ICON_GAP * RAIL_TOP_GAP_COUNT_BEFORE_SESSIONS
+    + RAIL_SESSIONS_GAP;
 
 /// One row in the tab sidebar panel.
 pub struct SessionEntry {
@@ -236,7 +231,7 @@ pub struct SessionSidebar {
     active_session: usize,
     leading_top_pad: f32,
     /// Smooth width animation between rail (0.0) and pinned (1.0).
-    width_motion: MotionValue,
+    width_motion: SidebarMotion,
     /// User-resized width of the pinned panel. Collapsed mode ignores
     /// this and stays at the fixed rail width.
     panel_width: f32,
@@ -360,7 +355,7 @@ impl SessionSidebar {
             // platform titlebar inset creates a dead band above the
             // tab-sidebar controls.
             leading_top_pad: 6.0,
-            width_motion: MotionValue::new(0.0),
+            width_motion: SidebarMotion::new(0.0),
             panel_width: PANEL_WIDTH,
             effective_panel_max_width: PANEL_MAX_WIDTH,
             rename: None,
@@ -424,7 +419,7 @@ impl SessionSidebar {
             self.cancel_rename(cx);
             self.hovered_rail = None;
             let target = if pinned { 1.0 } else { 0.0 };
-            self.width_motion.set_target(target, PANEL_TWEEN);
+            self.width_motion.set_target(target);
             cx.notify();
         } else if had_rail_only_override {
             cx.notify();
@@ -440,13 +435,15 @@ impl SessionSidebar {
     }
 
     pub fn rendered_width(&self) -> f32 {
-        if self.renders_rail_only() {
+        if self.tools_panel_open || self.rail_only_override {
             return RAIL_WIDTH;
         }
-        match self.mode {
-            PanelMode::Collapsed => RAIL_WIDTH,
-            PanelMode::Pinned => self.effective_panel_width(),
-        }
+        RAIL_WIDTH + (self.effective_panel_width() - RAIL_WIDTH) * self.width_motion.current()
+    }
+
+    pub fn advance_width_motion(&mut self, window: &mut Window, cx: &App) -> bool {
+        self.width_motion.value(window, cx);
+        self.width_motion.is_animating()
     }
 
     pub fn set_tools_panel_open(&mut self, open: bool, active_slot: ActivitySlot) {
@@ -955,13 +952,7 @@ impl SessionSidebar {
                     }
                 }),
             ))
-            .child(
-                div()
-                    .h(px(1.0))
-                    .w(px(20.0))
-                    .my(px(2.0))
-                    .bg(theme.muted_foreground.opacity(0.18)),
-            )
+            .child(div().h(px(1.0)).w(px(20.0)).my(px(2.0)))
             .child(rail_icon_button(
                 "tab-sidebar-rail-files",
                 "phosphor/folders.svg",
@@ -984,20 +975,15 @@ impl SessionSidebar {
                     })
                 }),
             ))
-            .child(
-                div()
-                    .h(px(1.0))
-                    .w(px(20.0))
-                    .my(px(2.0))
-                    .bg(theme.muted_foreground.opacity(0.18)),
-            )
+            .child(div().h(px(1.0)).w(px(20.0)).my(px(2.0)))
             .child(rail_icon_button(
                 "tab-sidebar-rail-new",
                 "phosphor/plus.svg",
                 theme.muted_foreground,
                 theme,
                 cx.listener(|_, _, _, cx| cx.emit(NewSession)),
-            ));
+            ))
+            .child(div().h(px(RAIL_SESSIONS_GAP)).flex_shrink_0());
 
         if !show_session_tiles {
             return rail;
@@ -1403,9 +1389,9 @@ impl SessionSidebar {
             .flex_col()
             .flex_1()
             .min_h_0()
-            .px(px(6.0))
+            .px(px(8.0))
             .pt(px(2.0))
-            .gap(px(2.0))
+            .gap(px(4.0))
             // Body-level drag_move ONLY runs the "below last row"
             // detection — the per-row handlers handle every cursor
             // position that's actually over a row. We fire the
@@ -1938,7 +1924,8 @@ impl Render for SessionSidebar {
                 cx.notify();
             }
         }
-        // Drive the width-tween animation frame.
+        // The workspace samples this too, so terminal reservation follows
+        // the same animated compact/expanded extent.
         let _progress = self.width_motion.value(window, cx);
 
         if self.tools_panel_open || self.rail_only_override {
@@ -1954,11 +1941,31 @@ impl Render for SessionSidebar {
         }
 
         match self.mode {
+            PanelMode::Collapsed if self.width_motion.current() > 0.0 => {
+                let visible_w = self.rendered_width();
+                div()
+                    .font_family(ui_font)
+                    .relative()
+                    .flex()
+                    .h_full()
+                    .w(px(visible_w))
+                    .flex_shrink_0()
+                    .overflow_hidden()
+                    .child(self.render_rail(window, cx))
+                    .child(
+                        div()
+                            .w(px(self.effective_panel_width() - RAIL_WIDTH))
+                            .h_full()
+                            .flex_shrink_0()
+                            .child(self.render_panel_body(false, window, cx)),
+                    )
+                    .child(activity_layer)
+                    .into_any_element()
+            }
             PanelMode::Pinned => {
                 let t = self.width_motion.current().clamp(0.0, 1.0);
                 let visible_w = RAIL_WIDTH + (self.effective_panel_width() - RAIL_WIDTH) * t;
                 let panel = self.render_panel_body(false, window, cx);
-                let panel_w = (visible_w - RAIL_WIDTH).max(0.0);
                 div()
                     .font_family(ui_font.clone())
                     .relative()
@@ -1971,7 +1978,7 @@ impl Render for SessionSidebar {
                     .child(
                         div()
                             .h_full()
-                            .w(px(panel_w))
+                            .w(px(self.effective_panel_width() - RAIL_WIDTH))
                             .flex_shrink_0()
                             .overflow_hidden()
                             .child(panel),
@@ -2154,6 +2161,7 @@ where
     let hover_bg = surface_tone(theme, 0.065);
     div()
         .id(id)
+        .debug_selector(move || id.into())
         .size(px(28.0))
         .flex_shrink_0()
         .flex()
@@ -2446,6 +2454,23 @@ fn normalize_sidebar_rename_label(value: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #[gpui::test]
+    fn collapsing_keeps_outgoing_panel_extent_until_motion_settles(cx: &mut gpui::TestAppContext) {
+        use gpui::AppContext;
+        let sidebar = cx.new(super::SessionSidebar::new);
+        sidebar.update(cx, |sidebar, cx| {
+            sidebar.set_pinned(true, cx);
+            sidebar.width_motion = crate::motion::SidebarMotion::new(1.0);
+            let expanded = sidebar.rendered_width();
+            sidebar.set_pinned(false, cx);
+            assert!(sidebar.rendered_width() > super::RAIL_WIDTH);
+            assert!(sidebar.rendered_width() <= expanded);
+            assert!(!sidebar.is_pinned());
+            sidebar.width_motion = crate::motion::SidebarMotion::new(0.0);
+            assert_eq!(sidebar.rendered_width(), super::RAIL_WIDTH);
+        });
+    }
+
     use super::{
         PanelMode, RAIL_ICON_SIZE, RAIL_TOP_CONTROLS_HEIGHT, RailModeButtonAction, SessionSidebar,
         SidebarDragPreviewState, begin_rename_after_cancel_lifecycle, begin_rename_lifecycle,
@@ -2582,9 +2607,7 @@ mod tests {
 
         view.update(cx, |sidebar, cx| {
             sidebar.set_pinned(true, cx);
-            sidebar
-                .width_motion
-                .set_target(1.0, std::time::Duration::ZERO);
+            sidebar.width_motion = crate::motion::SidebarMotion::new(1.0);
         });
         for (font_size, expected) in [(12.0, 14.4), (16.0, 16.0), (24.0, 21.6)] {
             cx.update(|_, cx| {
@@ -2620,7 +2643,10 @@ mod tests {
         assert!(cx.debug_bounds("tab-status-glyph").is_none());
         assert!(cx.debug_bounds("tab-status-brand").is_none());
 
-        view.update(cx, |sidebar, cx| sidebar.set_pinned(false, cx));
+        view.update(cx, |sidebar, cx| {
+            sidebar.set_pinned(false, cx);
+            sidebar.width_motion = crate::motion::SidebarMotion::new(0.0);
+        });
         assert_eq!(
             cx.debug_bounds("tab-status-slot")
                 .expect("compact busy slot")
@@ -2693,9 +2719,7 @@ mod tests {
 
         view.update(cx, |sidebar, cx| {
             sidebar.set_pinned(true, cx);
-            sidebar
-                .width_motion
-                .set_target(1.0, std::time::Duration::ZERO);
+            sidebar.width_motion = crate::motion::SidebarMotion::new(1.0);
         });
         for mode in [
             gpui_component::ThemeMode::Light,
@@ -2742,11 +2766,21 @@ mod tests {
         });
         assert!(cx.debug_bounds("sidebar-session-tile").is_some());
         assert!(cx.debug_bounds("sidebar-session-row").is_none());
+        let new_tab = cx
+            .debug_bounds("tab-sidebar-rail-new")
+            .expect("new tab control");
+        view.read_with(cx, |sidebar, _| {
+            let first = sidebar.tab_bounds.borrow()[0];
+            assert!(first.top() - new_tab.bottom() >= gpui::px(super::RAIL_SESSIONS_GAP));
+            assert_eq!(
+                first.top(),
+                gpui::px(sidebar.leading_top_pad + super::RAIL_TOP_CONTROLS_HEIGHT),
+                "drag fallback must match the actual session list origin",
+            );
+        });
         view.update(cx, |sidebar, cx| {
             sidebar.set_pinned(true, cx);
-            sidebar
-                .width_motion
-                .set_target(1.0, std::time::Duration::ZERO);
+            sidebar.width_motion = crate::motion::SidebarMotion::new(1.0);
         });
         assert!(cx.debug_bounds("sidebar-session-tile").is_none());
         assert!(cx.debug_bounds("sidebar-session-row").is_some());
@@ -2782,7 +2816,10 @@ mod tests {
         view.update(cx, |sidebar, cx| sidebar.clear_rail_only_override(cx));
         assert!(cx.debug_bounds("sidebar-session-tile").is_none());
         assert!(cx.debug_bounds("sidebar-session-row").is_some());
-        view.update(cx, |sidebar, cx| sidebar.set_pinned(false, cx));
+        view.update(cx, |sidebar, cx| {
+            sidebar.set_pinned(false, cx);
+            sidebar.width_motion = crate::motion::SidebarMotion::new(0.0);
+        });
         assert!(cx.debug_bounds("sidebar-session-tile").is_some());
         assert!(cx.debug_bounds("sidebar-session-row").is_none());
     }

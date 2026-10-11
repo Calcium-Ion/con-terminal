@@ -180,8 +180,7 @@ impl ConWorkspace {
             self.input_bar_visible = true;
             self.save_session(cx);
         }
-        let duration = Self::terminal_adjacent_chrome_duration(true, 180, 180);
-        self.input_bar_motion.set_target(1.0, duration);
+        self.input_bar_motion.set_target(1.0);
         self.input_bar.focus_handle(cx).focus(window, cx);
         cx.notify();
     }

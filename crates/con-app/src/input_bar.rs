@@ -1,6 +1,6 @@
 use gpui::*;
 use gpui_component::{
-    ActiveTheme, Colorize,
+    ActiveTheme, Colorize, Disableable,
     button::{Button, ButtonCustomVariant, ButtonVariants as _},
     input::{InputEvent, Position, Textarea, TextareaState},
 };
@@ -1242,7 +1242,7 @@ impl Render for InputBar {
         let input_cursor = input_state.read(cx).cursor();
         let mono_scale = mono_density_scale(theme);
         let control_size = mono_space_px(theme, 28.0);
-        let mode_icon_size = mono_space_px(theme, 15.0);
+        let mode_icon_size = mono_space_px(theme, 16.0);
         let compact_icon_size = mono_space_px(theme, 14.0);
 
         let mode_tint = self.mode.tint(cx);
@@ -1251,7 +1251,7 @@ impl Render for InputBar {
         let mode_prefix = Button::new("mode-toggle")
             .custom(
                 ButtonCustomVariant::new(cx)
-                    .color(mode_tint.opacity(0.075))
+                    .color(mode_tint.opacity(0.06))
                     .hover(mode_tint.opacity(0.12))
                     .active(mode_tint.opacity(0.16)),
             )
@@ -1264,7 +1264,7 @@ impl Render for InputBar {
             .h(control_size)
             .p_0()
             .cursor_pointer()
-            .rounded(px(7.0 * mono_scale))
+            .rounded(px(8.0 * mono_scale))
             .on_click(cx.listener(|this, _, window, cx| {
                 this.cycle_mode(window, cx);
                 this.current_input_state()
@@ -1364,7 +1364,7 @@ impl Render for InputBar {
                     .color(if has_text {
                         submit_tint.opacity(0.14)
                     } else {
-                        theme.transparent
+                        theme.foreground.opacity(0.045)
                     })
                     .hover(if has_text {
                         submit_tint.opacity(0.22)
@@ -1378,8 +1378,13 @@ impl Render for InputBar {
                     }),
             )
             .accessibility_label("Submit input")
-            .tooltip("Submit")
+            .tooltip(if self.mode == InputMode::Agent {
+                "Send message"
+            } else {
+                "Run input"
+            })
             .tab_stop(false)
+            .disabled(!has_text)
             .debug_selector(|| "command-send-button".into())
             .size(control_size)
             .w(control_size)
@@ -1395,11 +1400,11 @@ impl Render for InputBar {
             .child(
                 svg()
                     .path("phosphor/arrow-up.svg")
-                    .size(mono_space_px(theme, 13.0))
+                    .size(mono_space_px(theme, 16.0))
                     .text_color(if has_text {
                         submit_tint.opacity(0.92)
                     } else {
-                        theme.muted_foreground.opacity(0.62)
+                        theme.muted_foreground.opacity(0.8)
                     }),
             );
 
@@ -1634,22 +1639,8 @@ impl Render for InputBar {
                             .child(div().text_color(ghost_tint).child(ghost_suffix)),
                     )
             }))
-            .child(div().relative().top(input_vertical_offset).child(
-                if self.mode == InputMode::Agent {
-                    Textarea::new(&input_state)
-                        .appearance(false)
-                        .font_family(input_font)
-                        .text_color(if input_value.is_empty() {
-                            theme.muted_foreground.opacity(0.88)
-                        } else {
-                            theme.foreground.opacity(0.94)
-                        })
-                        .text_size(input_text_size)
-                        .line_height(input_line_height)
-                        .pl(px(12.0 * mono_scale))
-                        .min_h(control_size)
-                        .into_any_element()
-                } else {
+            .child(
+                div().relative().top(input_vertical_offset).child(
                     Textarea::new(&input_state)
                         .appearance(false)
                         .font_family(input_font)
@@ -1661,9 +1652,9 @@ impl Render for InputBar {
                         .text_size(input_text_size)
                         .line_height(input_line_height)
                         .min_h(control_size)
-                        .into_any_element()
-                },
-            ));
+                        .into_any_element(),
+                ),
+            );
 
         // ── Main layout — flat bar, no rounded bubble ──
         div()
