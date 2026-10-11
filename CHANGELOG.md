@@ -15,7 +15,11 @@ con is still pre-release, so entries may group related beta work while the produ
   panel moves. Compact and expanded vertical tabs share the same motion in
   both directions. The bottom input bar uses the same smooth motion without
   fading or compressing its contents. System Reduce Motion preferences remain
-  respected.
+  respected. _(PR [#466](https://github.com/nowledge-co/con-terminal/pull/466) by [@wey-gu](https://github.com/wey-gu))_
+- Input modes share one text inset so switching modes does not shift the cursor.
+  Input controls have consistent shapes and clearer send states; the compact
+  tab rail separates tools from sessions with spacing rather than extra lines.
+  _(PR [#466](https://github.com/nowledge-co/con-terminal/pull/466) by [@wey-gu](https://github.com/wey-gu))_
 
 ## `v0.1.0-beta.125` - 2026-10-11
 

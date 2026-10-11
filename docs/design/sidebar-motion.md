@@ -54,3 +54,18 @@ must not begin a drag against a moving sidebar edge.
   FPS. Correct spring math is not evidence that terminal resizing is cheap.
 - Run native Windows/Linux tests and visual acceptance when hardware is
   available; macOS evidence does not establish those results.
+
+## Adjacent Controls
+
+All three input modes render the same Textarea structure and inherit its native
+editor inset. Do not add mode-specific outer padding: the editor already owns
+the text inset, and an extra Agent-mode inset shifts the cursor on mode changes.
+Shell overlays continue to align with the editor's native inset. Prose and
+command font choices remain unchanged.
+
+Mode and submit controls share their dimensions and rounding. Empty submit is
+disabled; ready input has an accent fill. Use the official flattened Phosphor
+paths for small glyphs rather than depending on SVG stroke rasterization.
+The compact tab rail separates tool controls from session navigation with
+space, not extra borders. Its drag fallback origin must include that space;
+the layout test checks the origin against the actual first session bounds.

@@ -55,12 +55,14 @@ const RAIL_SELECTION_SIZE: f32 = 32.0;
 const RAIL_ICON_GAP: f32 = 2.0;
 const RAIL_BUTTON_SIZE: f32 = 28.0;
 const RAIL_DIVIDER_HEIGHT: f32 = 5.0;
+const RAIL_SESSIONS_GAP: f32 = 12.0;
 const RAIL_TOP_CONTROL_COUNT: f32 = 4.0;
 const RAIL_TOP_DIVIDER_COUNT: f32 = 2.0;
-const RAIL_TOP_GAP_COUNT_BEFORE_SESSIONS: f32 = 6.0;
+const RAIL_TOP_GAP_COUNT_BEFORE_SESSIONS: f32 = 7.0;
 const RAIL_TOP_CONTROLS_HEIGHT: f32 = RAIL_BUTTON_SIZE * RAIL_TOP_CONTROL_COUNT
     + RAIL_DIVIDER_HEIGHT * RAIL_TOP_DIVIDER_COUNT
-    + RAIL_ICON_GAP * RAIL_TOP_GAP_COUNT_BEFORE_SESSIONS;
+    + RAIL_ICON_GAP * RAIL_TOP_GAP_COUNT_BEFORE_SESSIONS
+    + RAIL_SESSIONS_GAP;
 
 /// One row in the tab sidebar panel.
 pub struct SessionEntry {
@@ -950,13 +952,7 @@ impl SessionSidebar {
                     }
                 }),
             ))
-            .child(
-                div()
-                    .h(px(1.0))
-                    .w(px(20.0))
-                    .my(px(2.0))
-                    .bg(theme.muted_foreground.opacity(0.18)),
-            )
+            .child(div().h(px(1.0)).w(px(20.0)).my(px(2.0)))
             .child(rail_icon_button(
                 "tab-sidebar-rail-files",
                 "phosphor/folders.svg",
@@ -979,20 +975,15 @@ impl SessionSidebar {
                     })
                 }),
             ))
-            .child(
-                div()
-                    .h(px(1.0))
-                    .w(px(20.0))
-                    .my(px(2.0))
-                    .bg(theme.muted_foreground.opacity(0.18)),
-            )
+            .child(div().h(px(1.0)).w(px(20.0)).my(px(2.0)))
             .child(rail_icon_button(
                 "tab-sidebar-rail-new",
                 "phosphor/plus.svg",
                 theme.muted_foreground,
                 theme,
                 cx.listener(|_, _, _, cx| cx.emit(NewSession)),
-            ));
+            ))
+            .child(div().h(px(RAIL_SESSIONS_GAP)).flex_shrink_0());
 
         if !show_session_tiles {
             return rail;
@@ -1398,9 +1389,9 @@ impl SessionSidebar {
             .flex_col()
             .flex_1()
             .min_h_0()
-            .px(px(6.0))
+            .px(px(8.0))
             .pt(px(2.0))
-            .gap(px(2.0))
+            .gap(px(4.0))
             // Body-level drag_move ONLY runs the "below last row"
             // detection — the per-row handlers handle every cursor
             // position that's actually over a row. We fire the
@@ -2170,6 +2161,7 @@ where
     let hover_bg = surface_tone(theme, 0.065);
     div()
         .id(id)
+        .debug_selector(move || id.into())
         .size(px(28.0))
         .flex_shrink_0()
         .flex()
@@ -2774,6 +2766,18 @@ mod tests {
         });
         assert!(cx.debug_bounds("sidebar-session-tile").is_some());
         assert!(cx.debug_bounds("sidebar-session-row").is_none());
+        let new_tab = cx
+            .debug_bounds("tab-sidebar-rail-new")
+            .expect("new tab control");
+        view.read_with(cx, |sidebar, _| {
+            let first = sidebar.tab_bounds.borrow()[0];
+            assert!(first.top() - new_tab.bottom() >= gpui::px(super::RAIL_SESSIONS_GAP));
+            assert_eq!(
+                first.top(),
+                gpui::px(sidebar.leading_top_pad + super::RAIL_TOP_CONTROLS_HEIGHT),
+                "drag fallback must match the actual session list origin",
+            );
+        });
         view.update(cx, |sidebar, cx| {
             sidebar.set_pinned(true, cx);
             sidebar.width_motion = crate::motion::SidebarMotion::new(1.0);
