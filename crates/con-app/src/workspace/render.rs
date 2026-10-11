@@ -165,19 +165,20 @@ impl ConWorkspace {
     }
 
     fn leading_panel_width_for_pane_resize(&self, cx: &mut Context<Self>) -> f32 {
-        if !self.left_panel_open {
+        let progress = self.left_panel_motion.current();
+        if progress <= 0.0 {
             return 0.0;
         }
 
         let sidebar = self.sidebar.read(cx);
         if self.vertical_tabs_enabled() {
             if self.sidebar_tools_open {
-                sidebar.panel_width()
+                sidebar.panel_width() * progress
             } else {
-                sidebar.rendered_width()
+                sidebar.rendered_width() * progress
             }
         } else {
-            sidebar.panel_width()
+            sidebar.panel_width() * progress
         }
     }
 
@@ -231,11 +232,8 @@ impl ConWorkspace {
         }
 
         let top_bar_height = self.current_top_bar_height();
-        let input_bar_height = if self.input_bar_visible {
-            self.input_bar.read(cx).rendered_height(cx).as_f32()
-        } else {
-            0.0
-        };
+        let input_bar_height =
+            self.input_bar.read(cx).rendered_height(cx).as_f32() * self.input_bar_motion.current();
         let win_w = f32::from(win.bounds().size.width);
         let win_h = f32::from(win.bounds().size.height);
         let effective_agent_panel_width = self.agent_panel_width.min(max_agent_panel_width(win_w));
@@ -414,9 +412,19 @@ impl Render for ConWorkspace {
             });
         }
 
-        // Sampling before value() also includes the final settled frame.
-        let agent_panel_transition_frame = self.agent_panel_motion.is_animating();
-        let input_bar_transition_frame = self.input_bar_motion.is_animating();
+        // Resolve boolean state here so all reveal paths (keyboard, Files,
+        // agent requests, restored state) share the same motion contract.
+        self.left_panel_motion
+            .set_target(if self.left_panel_open { 1.0 } else { 0.0 });
+        self.agent_panel_motion
+            .set_target(if self.agent_panel_open { 1.0 } else { 0.0 });
+        let left_panel_progress = self.left_panel_motion.value(window, cx);
+        let rail_transitioning = self
+            .sidebar
+            .update(cx, |sidebar, cx| sidebar.advance_width_motion(window, cx));
+        let left_panel_transitioning = self.left_panel_motion.is_animating() || rail_transitioning;
+        self.input_bar_motion
+            .set_target(if self.input_bar_visible { 1.0 } else { 0.0 });
         let agent_panel_progress = self.agent_panel_motion.value(window, cx);
         let input_bar_progress = self.input_bar_motion.value(window, cx);
         let tab_strip_progress = self.tab_strip_motion.value(window, cx);
@@ -464,7 +472,8 @@ impl Render for ConWorkspace {
             let pane_dragging =
                 self.has_active_tab() && self.tabs[self.active_tab].pane_tree.is_dragging();
             let underlay_active = allow_native_transition_underlay
-                && (agent_panel_transitioning
+                && (left_panel_transitioning
+                    || agent_panel_transitioning
                     || input_bar_transitioning
                     || tab_strip_transitioning
                     || self.agent_panel_drag.is_some()
@@ -480,24 +489,10 @@ impl Render for ConWorkspace {
             .min(max_agent_panel_width(window_width));
         #[cfg(not(target_os = "macos"))]
         let animated_panel_width = effective_agent_panel_width * agent_panel_progress;
-        let agent_panel_reserved_for_layout =
-            self.agent_panel_open || agent_panel_progress > 0.01 || agent_panel_snap_guard_active;
-        #[cfg(target_os = "macos")]
-        let agent_panel_outer_width = if agent_panel_reserved_for_layout {
-            effective_agent_panel_width + 1.0
-        } else {
-            0.0
-        };
-        #[cfg(not(target_os = "macos"))]
-        let agent_panel_outer_width = if agent_panel_progress > 0.01 {
-            animated_panel_width + 1.0
-        } else if agent_panel_reserved_for_layout {
-            effective_agent_panel_width + 1.0
-        } else {
-            0.0
-        };
+        let agent_panel_reserved_for_layout = self.agent_panel_open || agent_panel_progress > 0.0;
+        let agent_panel_outer_width = (effective_agent_panel_width + 1.0) * agent_panel_progress;
         let vertical_tabs_enabled = self.vertical_tabs_enabled();
-        let show_left_panel = self.left_panel_open;
+        let show_left_panel = self.left_panel_open || left_panel_progress > 0.0;
         let show_vertical_tabs = show_left_panel && vertical_tabs_enabled;
         let show_sidebar_tools =
             show_left_panel && (!vertical_tabs_enabled || self.sidebar_tools_open);
@@ -512,12 +507,6 @@ impl Render for ConWorkspace {
         let theme = cx.theme();
         let ui_surface_opacity = self.ui_surface_opacity();
         let elevated_ui_surface_opacity = self.elevated_ui_surface_opacity();
-        let agent_panel_content_progress = ((agent_panel_progress - 0.16) / 0.84)
-            .clamp(0.0, 1.0)
-            .powf(0.9);
-        let input_bar_content_progress = ((input_bar_progress - 0.08) / 0.92)
-            .clamp(0.0, 1.0)
-            .powf(0.92);
         let terminal_background = self.terminal_theme.background;
         let terminal_surface_color: Hsla = Rgba {
             r: f32::from(terminal_background.r) / 255.0,
@@ -564,11 +553,12 @@ impl Render for ConWorkspace {
         } else {
             (0.0, 0.0)
         };
-        let left_panel_width = if vertical_tabs_enabled {
+        let full_left_panel_width = if vertical_tabs_enabled {
             tab_sidebar_width + sidebar_content_width
         } else {
             sidebar_content_width
         };
+        let left_panel_width = full_left_panel_width * left_panel_progress;
         let terminal_content_left = left_panel_width;
         let terminal_content_width =
             (window_width - terminal_content_left - agent_panel_outer_width).max(0.0);
@@ -833,20 +823,11 @@ impl Render for ConWorkspace {
             );
         }
 
-        let input_bar_reserved_for_layout = input_bar_progress > 0.01;
+        let input_bar_reserved_for_layout = self.input_bar_visible || input_bar_progress > 0.0;
 
         if input_bar_reserved_for_layout {
             let full_input_bar_height = self.input_bar.read(cx).rendered_height(cx).as_f32();
-            let input_bar_height = if input_bar_progress > 0.01 {
-                full_input_bar_height * input_bar_progress
-            } else {
-                full_input_bar_height
-            };
-            let input_bar_content_opacity = if input_bar_progress > 0.01 {
-                input_bar_content_progress
-            } else {
-                0.0
-            };
+            let input_bar_height = full_input_bar_height * input_bar_progress;
             terminal_area = terminal_area.child(
                 div()
                     .relative()
@@ -856,27 +837,26 @@ impl Render for ConWorkspace {
                     .bg(input_bar_surface_color)
                     .pt(px(1.0))
                     // Separate output from input without adding another base fill.
-                    .child(div().absolute().top_0().left_0().w_full().h(px(1.0)).bg(
-                        chrome_edge_color.opacity(chrome_edge_color.a * input_bar_content_opacity),
-                    ))
                     .child(
                         div()
-                            .min_h(px((input_bar_height - 1.0).max(0.0)))
-                            .opacity(input_bar_content_opacity)
-                            .child(
-                                if input_bar_transition_frame || input_bar_content_opacity < 1.0 {
-                                    self.input_bar.clone().into_any_element()
-                                } else {
-                                    self.input_bar
-                                        .clone()
-                                        .cached(
-                                            StyleRefinement::default()
-                                                .w_full()
-                                                .h(px(full_input_bar_height - 1.0)),
-                                        )
-                                        .into_any_element()
-                                },
-                            ),
+                            .absolute()
+                            .top_0()
+                            .left_0()
+                            .w_full()
+                            .h(px(1.0))
+                            .bg(chrome_edge_color),
+                    )
+                    .child(
+                        div().h(px((full_input_bar_height - 1.0).max(0.0))).child(
+                            self.input_bar
+                                .clone()
+                                .cached(
+                                    StyleRefinement::default()
+                                        .w_full()
+                                        .h(px(full_input_bar_height - 1.0)),
+                                )
+                                .into_any_element(),
+                        ),
                     ),
             );
         }
@@ -885,7 +865,7 @@ impl Render for ConWorkspace {
 
         if show_left_panel {
             let mut left_sidebar = div()
-                .w(px(left_panel_width))
+                .w(px(full_left_panel_width))
                 .h_full()
                 .flex()
                 .flex_row()
@@ -920,7 +900,17 @@ impl Render for ConWorkspace {
                 }
                 left_sidebar = left_sidebar.child(sidebar_panel.child(sidebar_content));
             }
-            main_area = main_area.child(left_sidebar);
+            main_area = main_area.child(
+                div()
+                    .w(px(left_panel_width))
+                    .min_w_0()
+                    .h_full()
+                    .flex_shrink_0()
+                    .flex()
+                    .justify_end()
+                    .overflow_hidden()
+                    .child(left_sidebar),
+            );
         }
         // ── Main column: terminal area only (editor panes live inside pane tree) ──
         let main_column = div()
@@ -933,7 +923,7 @@ impl Render for ConWorkspace {
 
         main_area = main_area.child(main_column);
 
-        if show_sidebar_tools {
+        if show_sidebar_tools && !left_panel_transitioning {
             let resize_edge = left_panel_width;
             main_area = main_area.child(
                 div()
@@ -981,27 +971,12 @@ impl Render for ConWorkspace {
         let render_agent_panel = agent_panel_reserved_for_layout;
 
         if render_agent_panel {
-            #[cfg(target_os = "macos")]
-            let panel_width = effective_agent_panel_width + 1.0;
-            #[cfg(not(target_os = "macos"))]
-            let panel_width = if agent_panel_progress > 0.01 {
-                animated_panel_width + 1.0
-            } else {
-                effective_agent_panel_width + 1.0
-            };
-            #[cfg(target_os = "macos")]
-            let agent_panel_content_opacity =
-                if self.agent_panel_open || agent_panel_progress > 0.01 {
-                    agent_panel_content_progress
-                } else {
-                    0.0
-                };
-            #[cfg(not(target_os = "macos"))]
-            let agent_panel_content_opacity = agent_panel_content_progress;
+            let panel_width = agent_panel_outer_width;
 
             main_area = main_area.child(
                 div()
                     .w(px(panel_width))
+                    .min_w_0()
                     .h_full()
                     .overflow_hidden()
                     .flex_shrink_0()
@@ -1030,6 +1005,9 @@ impl Render for ConWorkspace {
                                         MouseButton::Left,
                                         cx.listener(
                                             move |this, event: &MouseDownEvent, _window, cx| {
+                                                if this.agent_panel_motion.is_animating() {
+                                                    return;
+                                                }
                                                 this.release_active_terminal_mouse_selection(cx);
                                                 this.agent_panel_drag = Some((
                                                     f32::from(event.position.x),
@@ -1043,20 +1021,15 @@ impl Render for ConWorkspace {
                     )
                     .child(
                         div()
-                            .flex_1()
+                            .w(px(effective_agent_panel_width))
+                            .flex_shrink_0()
                             .min_w_0()
                             .h_full()
-                            .opacity(agent_panel_content_opacity)
                             .child(
-                                if agent_panel_transition_frame || agent_panel_content_opacity < 1.0
-                                {
-                                    self.agent_panel.clone().into_any_element()
-                                } else {
-                                    self.agent_panel
-                                        .clone()
-                                        .cached(StyleRefinement::default().size_full())
-                                        .into_any_element()
-                                },
+                                self.agent_panel
+                                    .clone()
+                                    .cached(StyleRefinement::default().size_full())
+                                    .into_any_element(),
                             ),
                     ),
             );
@@ -1147,11 +1120,8 @@ impl Render for ConWorkspace {
                     }
 
                     let top_bar_height = this.current_top_bar_height();
-                    let input_bar_height = if this.input_bar_visible {
-                        this.input_bar.read(cx).rendered_height(cx).as_f32()
-                    } else {
-                        0.0
-                    };
+                    let input_bar_height = this.input_bar.read(cx).rendered_height(cx).as_f32()
+                        * this.input_bar_motion.current();
 
                     // Compute layout-dependent inputs *before* re-borrowing
                     // `this` mutably for the pane tree, otherwise we

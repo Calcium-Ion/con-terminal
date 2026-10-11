@@ -62,7 +62,7 @@ use crate::input_bar::{
     SkillAutocompleteChanged, SubmitInput, TogglePaneScopePicker as TogglePaneScopePickerRequested,
 };
 use crate::model_registry::ModelRegistry;
-use crate::motion::MotionValue;
+use crate::motion::{MotionValue, SidebarMotion};
 use crate::pane_tree::{
     PaneTree, SplitDirection, SplitPlacement, SurfaceCreateOptions, SurfaceRenameEditor,
 };
@@ -204,11 +204,12 @@ pub struct ConWorkspace {
     global_input_history: VecDeque<String>,
     pane_scope_picker_open: bool,
     agent_panel_open: bool,
-    agent_panel_motion: MotionValue,
+    agent_panel_motion: SidebarMotion,
+    left_panel_motion: SidebarMotion,
     agent_panel_width: f32,
     tab_strip_motion: MotionValue,
     input_bar_visible: bool,
-    input_bar_motion: MotionValue,
+    input_bar_motion: SidebarMotion,
     /// Tracks whether a modal was open on the last render, so we can
     /// restore terminal focus when a modal dismisses itself internally.
     modal_was_open: bool,

@@ -4,6 +4,19 @@ All notable changes to con are documented here.
 
 con is still pre-release, so entries may group related beta work while the product shape is stabilizing.
 
+## `v0.1.0-beta.126` - Unreleased
+
+### Changed
+
+**Panel motion**
+
+- Left and right sidebars slide with continuous, non-bouncing motion, including
+  when reversed mid-transition. Agent-panel text keeps its layout while the
+  panel moves. Compact and expanded vertical tabs share the same motion in
+  both directions. The bottom input bar uses the same smooth motion without
+  fading or compressing its contents. System Reduce Motion preferences remain
+  respected.
+
 ## `v0.1.0-beta.125` - 2026-10-11
 
 ### Changed

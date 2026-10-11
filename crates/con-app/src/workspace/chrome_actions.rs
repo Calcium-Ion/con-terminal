@@ -8,17 +8,12 @@ impl ConWorkspace {
         cx: &mut Context<Self>,
     ) {
         self.agent_panel_open = !self.agent_panel_open;
-        let duration = Self::terminal_adjacent_chrome_duration(self.agent_panel_open, 290, 220);
         #[cfg(target_os = "macos")]
-        if !duration.is_zero() {
-            self.arm_chrome_transition_underlay(duration + Duration::from_millis(80));
-        }
-        #[cfg(target_os = "macos")]
-        if duration.is_zero() {
+        if cx.reduce_motion() {
             self.arm_agent_panel_snap_guard(cx);
         }
         self.agent_panel_motion
-            .set_target(if self.agent_panel_open { 1.0 } else { 0.0 }, duration);
+            .set_target(if self.agent_panel_open { 1.0 } else { 0.0 });
         if self.agent_panel_open {
             if self.input_bar_visible {
                 self.input_bar.focus_handle(cx).focus(window, cx);
@@ -47,13 +42,8 @@ impl ConWorkspace {
         if !self.input_bar_visible {
             self.pane_scope_picker_open = false;
         }
-        let duration = Self::terminal_adjacent_chrome_duration(self.input_bar_visible, 210, 160);
-        #[cfg(target_os = "macos")]
-        if !duration.is_zero() {
-            self.arm_chrome_transition_underlay(duration + Duration::from_millis(80));
-        }
         self.input_bar_motion
-            .set_target(if self.input_bar_visible { 1.0 } else { 0.0 }, duration);
+            .set_target(if self.input_bar_visible { 1.0 } else { 0.0 });
         if self.input_bar_visible {
             self.input_bar.focus_handle(cx).focus(window, cx);
         } else if self.agent_panel_open {
@@ -156,8 +146,7 @@ impl ConWorkspace {
 
         if !self.input_bar_visible {
             self.input_bar_visible = true;
-            let duration = Self::terminal_adjacent_chrome_duration(true, 180, 180);
-            self.input_bar_motion.set_target(1.0, duration);
+            self.input_bar_motion.set_target(1.0);
         }
 
         self.pane_scope_picker_open = !self.pane_scope_picker_open;

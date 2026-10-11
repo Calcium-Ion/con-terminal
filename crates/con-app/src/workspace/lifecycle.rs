@@ -838,11 +838,16 @@ impl ConWorkspace {
             global_input_history,
             pane_scope_picker_open: false,
             agent_panel_open,
-            agent_panel_motion: MotionValue::new(if agent_panel_open { 1.0 } else { 0.0 }),
+            agent_panel_motion: SidebarMotion::new(if agent_panel_open { 1.0 } else { 0.0 }),
+            left_panel_motion: SidebarMotion::new(if session.left_panel_open.unwrap_or(true) {
+                1.0
+            } else {
+                0.0
+            }),
             agent_panel_width,
             tab_strip_motion: MotionValue::new(if has_multiple_tabs { 1.0 } else { 0.0 }),
             input_bar_visible: session.input_bar_visible,
-            input_bar_motion: MotionValue::new(if session.input_bar_visible { 1.0 } else { 0.0 }),
+            input_bar_motion: SidebarMotion::new(if session.input_bar_visible { 1.0 } else { 0.0 }),
             modal_was_open: false,
             ghostty_hidden: false,
             #[cfg(target_os = "macos")]
