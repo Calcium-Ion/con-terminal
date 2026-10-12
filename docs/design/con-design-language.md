@@ -92,6 +92,10 @@ con is light-first (Flexoki Light default) but must excel in both themes.
 - On transparent tab chrome, use solid foreground/muted foreground theme tokens
   for readable titles and identity icons. Do not further fade those glyphs with
   alpha; retain translucency on the surface instead.
+- Horizontal tabs share a lightly tinted tray. The selected inset surface
+  groups its identity icon and name, while resting tabs stay flat. Reveal close
+  in the same leading slot on hover without shifting the title. See
+  `docs/design/compact-tab-strip.md` for geometry and interaction constraints.
 - Apply the same rule throughout sidebar navigation, file trees and search,
   including disclosure arrows, secondary paths and result line numbers.
 - The titlebar, left sidebar, agent sidebar, and bottom input bar share one
@@ -106,10 +110,12 @@ con is light-first (Flexoki Light default) but must excel in both themes.
 - Show each tab once: expanded vertical tabs live in the labeled list; compact
   tabs live in the icon rail. Keep the rail's section controls available in
   either state, and retain compact tab navigation beside Files/Search panels.
-- Title-bar action buttons share a 22px square, 5px rounding and centered
+- Title-bar action buttons share a 22px square, 6px rounding and centered
   vertical placement within the current title-bar height. Use component Button
-  controls; neutral translucent fills distinguish idle, hover and press, while
-  accent-colored icons indicate an open panel. Pointer activation must not
+  controls; neutral translucent fills distinguish open, hover and press states.
+  Open panels use solid foreground icons over a persistent neutral fill;
+  closed panels use quiet solid ink rather than accent-colored state markers.
+  Pointer activation must not
   steal terminal focus or bubble into native title-bar dragging. Keep native
   Windows/Linux caption buttons separate from this action row.
 - **No shadows** - Use opacity-based fills for elevation
@@ -491,3 +497,21 @@ Used for context, categories, entities, filters.
 - Metadata row: 11px, very muted
 - Tags inline below description
 - Right-aligned actions (ratings, timestamps)
+
+## Command Bar Controls
+
+The bottom input bar retains its 44-point minimum height and shared density
+scaling. Mode, pane scope, and submission controls align on the same 28-point
+row. Input typography, multiline growth, completion overlays, and panel motion
+are independent of control styling.
+
+Use quiet neutral fills for the mode and pane-target controls. Mode icons keep
+their semantic color; pane-target labels use the UI font and solid theme-derived
+ink rather than translucent glyphs. Both controls use component buttons and
+restore input focus after activation. Pane scope uses a bounded 96-point width
+at default density; long names truncate, with the full label and shortcut in
+the tooltip. Test its content bounds as well as the outer button's bounds.
+
+The circular submit control is the primary action: a neutral foreground fill
+with an inverse icon when input is ready, and a quiet disabled fill when empty.
+Changing modes must not move the text or change the submission hit target.
