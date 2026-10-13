@@ -846,6 +846,7 @@ impl ConWorkspace {
             }),
             agent_panel_width,
             tab_strip_motion: MotionValue::new(if has_multiple_tabs { 1.0 } else { 0.0 }),
+            tab_slot_motion: Default::default(),
             input_bar_visible: session.input_bar_visible,
             input_bar_motion: SidebarMotion::new(if session.input_bar_visible { 1.0 } else { 0.0 }),
             modal_was_open: false,
@@ -900,6 +901,7 @@ impl ConWorkspace {
             tab_strip_tab_bounds: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             horizontal_tab_scroll: gpui::ScrollHandle::new(),
             horizontal_tab_reveal_key: Default::default(),
+            horizontal_tab_edges: Default::default(),
             pane_title_drag_tab_bounds: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             hide_pane_title_bar: config.appearance.hide_pane_title_bar,
 

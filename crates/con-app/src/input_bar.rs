@@ -1,6 +1,6 @@
 use gpui::*;
 use gpui_component::{
-    ActiveTheme, Colorize, Disableable,
+    ActiveTheme, Colorize,
     button::{Button, ButtonCustomVariant, ButtonVariants as _},
     input::{InputEvent, Position, Textarea, TextareaState},
 };
@@ -96,17 +96,9 @@ impl InputMode {
 
     fn icon(self) -> &'static str {
         match self {
-            Self::Smart => "phosphor/magic-wand.svg",
-            Self::Shell => "phosphor/terminal.svg",
-            Self::Agent => "phosphor/sparkle.svg",
-        }
-    }
-
-    fn tint(self, cx: &App) -> Hsla {
-        match self {
-            Self::Smart => cx.theme().muted_foreground,
-            Self::Shell => cx.theme().success,
-            Self::Agent => cx.theme().primary,
+            Self::Smart => "input-mode-smart.png",
+            Self::Shell => "input-mode-shell.png",
+            Self::Agent => "input-mode-agent.png",
         }
     }
 
@@ -274,7 +266,7 @@ impl InputBar {
 
     fn pane_scope_summary(&self) -> (String, &'static str) {
         match self.pane_scope_mode {
-            PaneScopeMode::Broadcast => ("All panes".to_string(), "phosphor/squares-four.svg"),
+            PaneScopeMode::Broadcast => ("All panes".to_string(), "phosphor/broadcast-duotone.svg"),
             PaneScopeMode::Focused => ("Focused".to_string(), "phosphor/target.svg"),
             PaneScopeMode::Custom => {
                 let targets = self.effective_target_ids();
@@ -1241,19 +1233,17 @@ impl Render for InputBar {
         let input_value = input_state.read(cx).value().to_string();
         let input_cursor = input_state.read(cx).cursor();
         let mono_scale = mono_density_scale(theme);
-        let control_size = mono_space_px(theme, 28.0);
-        let mode_icon_size = mono_space_px(theme, 16.0);
+        let control_size = mono_space_px(theme, crate::input_chrome::CONTROL_SIZE);
+        let mode_icon_size = mono_space_px(theme, 22.0);
         let compact_icon_size = mono_space_px(theme, 14.0);
-
-        let mode_tint = self.mode.tint(cx);
 
         // ── Mode prefix — icon-only, minimal ──
         let mode_prefix = Button::new("mode-toggle")
             .custom(
                 ButtonCustomVariant::new(cx)
-                    .color(theme.foreground.opacity(0.035))
-                    .hover(theme.foreground.opacity(0.09))
-                    .active(theme.foreground.opacity(0.14)),
+                    .color(theme.transparent)
+                    .hover(theme.foreground.opacity(0.055))
+                    .active(theme.foreground.opacity(0.10)),
             )
             .accessibility_label(format!("{}; switch mode", self.mode.tooltip()))
             .tooltip_with_action(self.mode.tooltip(), &crate::CycleInputMode, None)
@@ -1264,18 +1254,17 @@ impl Render for InputBar {
             .h(control_size)
             .p_0()
             .cursor_pointer()
-            .rounded(px(6.0 * mono_scale))
+            .rounded(px(8.0 * mono_scale))
             .on_click(cx.listener(|this, _, window, cx| {
                 this.cycle_mode(window, cx);
                 this.current_input_state()
                     .update(cx, |state, cx| state.focus(window, cx));
             }))
-            .child(
-                svg()
-                    .path(self.mode.icon())
-                    .size(mode_icon_size)
-                    .text_color(mode_tint),
-            );
+            .child(crate::assets::tab_identity_icon(
+                self.mode.icon(),
+                mode_icon_size,
+                theme.foreground,
+            ));
 
         // ── Pane target control — scales to many panes without growing the row ──
         let all_selected = self.all_panes_selected();
@@ -1286,7 +1275,7 @@ impl Render for InputBar {
             let scope_tint = if scope_is_expanded {
                 theme.primary
             } else {
-                theme.foreground.blend(theme.background.opacity(0.28))
+                theme.muted_foreground
             };
             Some(
                 div()
@@ -1337,7 +1326,7 @@ impl Render for InputBar {
                                     .line_height(mono_px(theme, 14.0))
                                     .font_family(theme.font_family.clone())
                                     .font_weight(FontWeight::MEDIUM)
-                                    .text_color(scope_tint)
+                                    .text_color(theme.foreground)
                                     .max_w(px(128.0 * mono_scale))
                                     .overflow_hidden()
                                     .whitespace_nowrap()
@@ -1352,57 +1341,19 @@ impl Render for InputBar {
         };
 
         // ── Send button — inside container, right edge ──
-        let submit_fill = if has_text {
-            theme.foreground
-        } else {
-            theme.foreground.opacity(0.045)
-        };
-        let send_button = Button::new("send-button")
-            .custom(
-                ButtonCustomVariant::new(cx)
-                    .color(submit_fill)
-                    .hover(if has_text {
-                        theme.foreground.opacity(0.88)
-                    } else {
-                        theme.foreground.opacity(0.06)
-                    })
-                    .active(if has_text {
-                        theme.foreground.opacity(0.76)
-                    } else {
-                        theme.foreground.opacity(0.08)
-                    }),
-            )
+        let send_button = crate::input_chrome::send_button("send-button", has_text, theme, cx)
             .accessibility_label("Submit input")
             .tooltip(if self.mode == InputMode::Agent {
                 "Send message"
             } else {
                 "Run input"
             })
-            .tab_stop(false)
-            .disabled(!has_text)
             .debug_selector(|| "command-send-button".into())
-            .size(control_size)
-            .w(control_size)
-            .h(control_size)
-            .p_0()
-            .cursor_pointer()
-            .rounded_full()
-            .bg(submit_fill)
             .on_click(cx.listener(|this, _, window, cx| {
                 cx.emit(SubmitInput);
                 this.current_input_state()
                     .update(cx, |state, cx| state.focus(window, cx));
-            }))
-            .child(
-                svg()
-                    .path("phosphor/arrow-up.svg")
-                    .size(mono_space_px(theme, 16.0))
-                    .text_color(if has_text {
-                        theme.background
-                    } else {
-                        theme.foreground.blend(theme.background.opacity(0.45))
-                    }),
-            );
+            }));
 
         // Shell input is terminal chrome; natural-language agent input uses
         // the UI font so its prose reads like the agent panel.
@@ -1638,6 +1589,8 @@ impl Render for InputBar {
                 div().relative().top(input_vertical_offset).child(
                     Textarea::new(&input_state)
                         .appearance(false)
+                        // Match the workspace slot instead of the editor's default minimum.
+                        .h(self.rendered_height(cx) - px(12.0 * mono_scale))
                         .font_family(input_font)
                         .text_color(if hide_native_command_text {
                             gpui::transparent_black()
@@ -1665,12 +1618,13 @@ impl Render for InputBar {
             // ── Flat container ──
             .child(
                 div()
-                    .px(px(12.0 * mono_scale))
+                    .debug_selector(|| "command-input-row".into())
+                    .px(px(crate::input_chrome::BAR_INSET * mono_scale))
                     .py(px(6.0 * mono_scale))
                     .min_h(px(44.0 * mono_scale))
                     .flex()
                     .items_center()
-                    .gap(px(9.0 * mono_scale))
+                    .gap(px(crate::input_chrome::CONTROL_GAP * mono_scale))
                     .child(mode_prefix)
                     .children(pane_row)
                     .child(div().flex_1().min_w_0().child(input_field))
@@ -1860,6 +1814,14 @@ mod tests {
                     let mode_toggle = view
                         .debug_bounds("command-mode-toggle")
                         .expect("mode toggle");
+                    let row = view.debug_bounds("command-input-row").unwrap();
+                    let leading_inset = mode_toggle.left() - row.left();
+                    let bottom_inset = row.bottom() - mode_toggle.bottom();
+                    assert!(
+                        (leading_inset - bottom_inset).abs() <= px(1.0),
+                        "{mode:?}, cached={cached}: row={row:?}, mode={mode_toggle:?}, leading={leading_inset:?}, bottom={bottom_inset:?}"
+                    );
+                    assert_eq!(mode_toggle.center().y, send.center().y);
                     match mode_row_top[cache_index] {
                         Some(top) => {
                             assert_eq!(mode_toggle.top(), top, "{mode:?}, cached={cached}")

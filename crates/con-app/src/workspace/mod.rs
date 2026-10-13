@@ -141,6 +141,7 @@ mod session_worker;
 mod sidebar_settings;
 mod suggestions;
 mod tab_actions;
+mod tab_motion;
 mod tab_presentation;
 mod terminal_factory;
 mod terminal_status;
@@ -208,6 +209,7 @@ pub struct ConWorkspace {
     left_panel_motion: SidebarMotion,
     agent_panel_width: f32,
     tab_strip_motion: MotionValue,
+    tab_slot_motion: tab_motion::TabSlotMotion,
     input_bar_visible: bool,
     input_bar_motion: SidebarMotion,
     /// Tracks whether a modal was open on the last render, so we can
@@ -313,6 +315,7 @@ pub struct ConWorkspace {
     tab_strip_tab_bounds: std::sync::Arc<std::sync::Mutex<Vec<Bounds<Pixels>>>>,
     horizontal_tab_scroll: gpui::ScrollHandle,
     horizontal_tab_reveal_key: HorizontalTabRevealState,
+    horizontal_tab_edges: Rc<Cell<(bool, bool)>>,
     /// Bounds of real tabs only (no ghost placeholder), in render order.
     /// Used exclusively by pane-title-drag slot calculation so it never
     /// needs to know where the ghost tab sits in the visual layout.
