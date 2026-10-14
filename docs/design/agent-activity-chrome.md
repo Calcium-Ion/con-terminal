@@ -4,6 +4,12 @@ The sidebar has three distinct jobs: choose the session's provider/model, show
 what is happening now, and retain the conversation and tool trace. Keep those
 regions legible without repeating the same status in each one.
 
+The panel meets the titlebar with a slight neutral material step and a quiet
+inset header separator. Its resize affordance stays full-height, but the
+decorative vertical edge begins below the header. Do not clip the terminal
+junction into a rounded cutout: that reveals the desktop behind native surfaces.
+There is no full-window titlebar rule, outline or opaque transition overlay.
+
 ## Live activity
 
 - Show one live summary below the session controls. Approval takes precedence
@@ -36,6 +42,21 @@ otherwise the title becomes a stack of words in narrow panels. Avoid repeating
 the same running/denied count in both text and a badge.
 
 ## Performance and behavior
+
+Expanded tab activity uses three center-anchored, staggered bars in the existing
+retained activity layer. Compact tabs keep their brand icon and ring; numeric
+progress stays determinate. Reduced motion uses static bars, and invisible
+markers do not request animation frames. Activity never changes the tab's width.
+
+Message metadata uses plain UI-font text rather than another filled badge.
+Tool names and disclosure labels use the UI font; commands, arguments, and
+durations retain the mono font. Nested trace surfaces use progressively quieter
+fills, not translucent text or extra rules.
+
+The foreground event dispatcher consumes at most 64 agent events per session
+per turn, in FIFO order, and awaits between turns even while work is available.
+This prevents a continuously ready producer from monopolizing native input
+dispatch. It is not a global time budget for every workspace queue.
 
 The summary is a small chrome subtree outside the virtualized transcript. It
 reads existing panel state; it does not poll terminals, request extra events,
