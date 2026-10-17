@@ -58,6 +58,13 @@ con is still pre-release, so entries may group related beta work while the produ
 
 ### Fixed
 
+**Linux**
+
+- Full-screen terminal programs such as Claude Code fit within the pane,
+  including at fractional display scales. Their right edge and last row no
+  longer extend beyond the visible terminal area.
+  _(PR [#487](https://github.com/nowledge-co/con-terminal/pull/487) by [@Towerism](https://github.com/Towerism))_
+
 **macOS**
 
 - Closing the other panes no longer leaves the surviving terminal clipped to
