@@ -8,6 +8,12 @@ con is still pre-release, so entries may group related beta work while the produ
 
 ### Fixed
 
+**macOS**
+
+- Terminal pane corners have smoother, more even contours while preserving
+  terminal transparency, blur and the fine pane outline.
+  _(PR [#492](https://github.com/nowledge-co/con-terminal/pull/492) by [@wey-gu](https://github.com/wey-gu))_
+
 **Linux**
 
 - Clicks, selection, link hover and mouse input in terminal programs land on
