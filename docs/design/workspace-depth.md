@@ -7,10 +7,21 @@ canvas with 3pt of breathing room. Its native viewport stays rectangular;
 rounded corners belong to the terminal cards, not a second enclosing mask. Terminal cards,
 including a single pane, use 2pt insets and the same 8pt corners within that
 canvas. In clean mode, a single terminal returns to zero inset and zero radius.
+A card corner that meets a rounded window corner (pane, input tray or agent
+composer) shares that corner's centre: its radius is the window radius, read
+from AppKit, less the card's clearance from both window edges, and never below
+8pt. Other corners keep 8pt. Fullscreen windows have no corner to follow. The
+radius is derived from painted bounds, so it settles back to 8pt as an adjacent
+sidebar opens rather than switching on a layout flag.
 Horizontal tabs already include bottom clearance inside their fixed-height row.
 Subtract that clearance from the canvas's top margin as the strip appears, so
-the visible tab-to-pane gap matches the 5pt lateral outer inset. Keep caption
-height and tab/control centering unchanged. The native clip, gutter paint and
+the visible tab-to-pane gap matches the 5pt lateral outer inset. The macOS
+caption row is 32pt, matching AppKit's titlebar; the traffic lights and the
+22pt controls are both centred in it, leaving 5pt around the controls. Without
+a tab strip, the card starts at the row's bottom edge, so the space below the
+controls equals the space above them. A docked caption gives its row back and
+the card keeps its full 5pt top clearance. The strip's appearance does not
+change caption height or tab/control centering. The native clip, gutter paint and
 agent panel top use the same top geometry.
 The original divider hit
 targets remain available between them. Following maintainer feedback on 2026-10-17,
@@ -185,6 +196,13 @@ have its old split-sized mask.
   terminal translucency behind the tray.
 - The clip path is cached per host. A window-scoped geometry generation
   invalidates otherwise unchanged terminal layouts when the outer canvas moves.
+- Resolve each card's four corner radii from its snapped bounds and use those
+  same values for GPUI contours/cutouts and the native pane mask. Forward its
+  upper pair to native header material; a uniform native radius beneath a
+  larger translucent exterior cutout can expose native pixels outside the curve.
+  Radius-only changes invalidate cached paths. Clamp radii to half the smaller
+  card dimension, including during small-pane layouts. The native header's
+  material path is independent of the shared workspace clip.
 - A header below another header has square top corners, avoiding holes at the
   title/surface-strip join. An undecorated single terminal keeps a zero radius.
 - Header material follows its host's visibility, including tab/surface changes
