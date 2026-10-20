@@ -219,3 +219,246 @@ high-frame-rate acceptance. The maintainer noticed remaining rough dark pane
 edges in this preview and requested that #496/#499 merge first, followed by a
 separate rendering fix before the next release. Do not treat the geometry tests
 or the initial local inspection as acceptance of that outstanding visual issue.
+
+## Follow-up: Dark Corner Antialiasing
+
+The maintainer localized the remaining roughness to pane corners. A separate
+candidate moves only the pane contour inward by one physical pixel and reduces
+its radii by the same amount. Corner centres, native clipping, exterior cutouts,
+glass, blur and the presentation dependency are unchanged. The straight contour
+also moves inward; this is not a corner-only geometry change. Input trays and
+agent composers retain their existing contours. All changed runtime call sites
+are macOS-only.
+
+The pinned quad shader uses a half-physical-pixel coverage threshold. Separating
+the contour from the exterior curve tests whether overlapping coverage ramps
+contribute to the roughness; it does not establish their causal contribution to
+every visible pixel. The candidate adds no layers, timers or full-pane paint.
+
+All 657 linked macOS app tests passed serially, including a geometry regression
+at 1x, 1.5x and 2x. Its first assertion used exact float equality and failed at
+1.5x due to a roughly 0.00001pt rounding difference; the corrected assertion uses
+a 0.0001pt tolerance. No production geometry or test deadline changed to pass it.
+The embedded-assets dev build and formatting/whitespace checks also passed.
+
+Separate baseline/candidate bundles were inspected with the same three-pane
+fixture, surface headers, bottom input tray, 0.82 glass/chrome opacity and blur
+on macOS 15. Light appearance remains quiet, but the dark comparison still has
+visible fine edge artifacts. That experiment was not accepted as the completed
+visual fix and is superseded by the shared-mask candidate below. There is
+no local Windows/Linux, macOS 27, 1x-display or high-frame-rate visual acceptance.
+
+### Shared Raster Coverage
+
+Removing only the contour left visible corner detailing. Removing only the
+exterior cutouts exposed the light window backing outside the native curves.
+Both comparisons used temporary switches, now removed. Neither removing the
+outline nor omitting the cutouts is a valid fix.
+
+The pinned renderer rasterizes paths with four multisamples. Its SVG route
+instead rasterizes an alpha mask above device resolution and retains it in the
+sprite atlas. The replacement keeps the same circular cubic, native clip and
+original contour position, but paints corner-sized alpha sprites rather than
+the tessellated exterior paths. No dependency, native geometry or material
+opacity changes are involved. This addresses the cutout's sampling; it is not
+a correction to GPUI's separate destination-alpha issue.
+
+An intermediate implementation rasterized four reflected SVGs separately. Its
+new raster test failed the two-alpha-level reflection tolerance, while the
+other 655 tests passed. The final implementation uses one canonical mask and
+GPU reflections about each tile's snapped device-pixel centre, avoiding
+independent rasterizations rather than weakening that comparison. The atlas
+key is independent of position and theme; equal-sized corners share one entry.
+Subpixel tiles that snap to zero are skipped before SVG allocation. There are
+no new native views, full-pane textures, per-paint SVG strings or timers.
+
+The final linked app suite passed all 657 tests serially. Raster regressions
+check coverage levels, circular area and tangent/interior pixels at 1x, 1.5x
+and 2x. Geometry tests check four reflected tile positions, double reflection,
+asymmetric/zero-radius cases and zero-sized snapped tiles. The native dev build,
+formatting and whitespace checks passed. The final candidate was inspected in
+light/dark glass on macOS 15, including nested panes, split/close, zoom/restore,
+surface headers, the input tray and agent-panel toggles. The local settled-state
+comparison is visibly more even; maintainer acceptance of this new preview is
+still pending. These checks do not certify macOS 27 appearance, transition-frame
+timing, 1x hardware or Windows/Linux runtime behavior. Changed runtime code is
+confined to the macOS-only frame module.
+
+### Maintainer Recheck: Still Not Accepted
+
+The maintainer inspected the shared-mask preview and still reported rough,
+light-leaking corners in the dark theme. They also observed that light-theme
+dark edging and dark-theme bright edging appeared to trade off. This is useful
+cross-theme evidence, not proof of one cause. The earlier local impression of
+improvement and the passing raster tests do not establish a completed fix.
+PR #502 stays in draft; its pending user-facing changelog claim is removed.
+
+The October 20 source audit confirms that both the common and path-sprite
+Metal pipelines in Con's pinned Apple snapshot still add destination alpha
+with factor `One`. The SVG mask uses the common pipeline, so changing its
+rasterization does not correct this known compositing defect. The independent
+GPU readback evidence and its limits are recorded in the October 8 transparency
+postmortem. Official Zed #65571 merged the correction on October 14, but the
+registry index still lists `gpui-pre-apple` 0.3.9, published October 12, as the
+latest package. The October 18 archive audit found that it lacks the correction.
+
+The next informative experiment is a matched renderer A/B changing only the
+two destination-alpha factors, with the same scene, glass, blur and backdrop.
+This is not an assertion that the alpha correction fixes all corner artifacts.
+The existing temporary fork authorization does not include it. A separate
+public experiment branch needs explicit authorization; neither the current
+production pin nor the previously submitted upstream branch should be changed
+to run that comparison.
+
+### Separately Authorized Alpha A/B
+
+The maintainer authorized the independent public experiment on October 20.
+Its immutable revision is `94f3f2c80f3e55170d485b228ad8e5107922b90b` on
+`wey-gu/zed:fix/con-corner-alpha-ab-20261020`. The original presentation and
+upstream-source branches are unchanged. The experiment changes two Metal
+destination-alpha blend factors and adds native GPU tests, with no Windows or
+Linux renderer changes.
+
+All three new tests fail against the original snapshot: compositing source
+coverage 0.25 over destination alpha 0.4 produces alpha 166 instead of about
+140. The same tests pass after the two-line correction for quads, monochrome
+coverage and paths, also checking transparent and opaque destination controls.
+All eight Apple library tests pass. This establishes the blend-state defect
+and the correction, not final visual acceptance of Con pane corners. The
+separate Con preview experiment must still verify the integrated result; no
+production dependency change is authorized by this A/B permission.
+
+The candidate Con app built against the remote immutable revision. Its lockfile
+changes only `gpui-pre-apple`; `cargo tree` confirms one original GPUI core
+identity shared with the unchanged components and macOS package. Independent
+A/B bundles were inspected sequentially in dark/light appearance on macOS
+15.7.9, with matching three-pane fixtures, geometry, 0.82 glass/chrome opacity
+and blur. Hidden-window screenshots were excluded: native backing can be stale
+until the window is raised and repainted. Settled corner appearance did not
+improve enough to accept this as the reported issue's completed fix.
+
+The candidate's isolated new pane produced the expected shell output and closed
+on shell exit. Split, zoom/restore, sidebar and input-tray toggles were exercised.
+These checks do not prove high-frame-rate transition correctness or acceptance
+on macOS 27, 1x displays, Windows or Linux. Keep PR #502 in draft and production
+pins unchanged. Further investigation must distinguish native clip coverage,
+GPUI exterior coverage and the contour rather than assuming another colour
+adjustment or the blend-factor correction alone resolves their combination.
+
+The final remote-pin candidate passed all 657 linked app tests serially, with
+the short private temporary directory and no skipped tests. Formatting and
+whitespace checks passed. This is an independent experimental worktree, not a
+production-pin commit. The window-level captures and a separately prepared
+white backdrop do not certify full-desktop/high-contrast compositor behavior;
+the maintainer must still inspect the actual visible result.
+
+### Dark-Theme Recheck: Coverage Handoff Remains Open
+
+The maintainer reports light appearance acceptable but a dark-theme edge still
+visible. Further local switches were tested only in the independent Con worktree;
+they are not production settings or changes included in this PR.
+
+- Suppressing the contour removes much of the line but not the bright corner
+  sample: one inspected RGB point remains approximately 60/59/57 against the
+  adjacent 37/36/34 gutter. Removing the contour alone is not the fix.
+- Rectangular native pane/header coverage removes that bright sample but exposes
+  a differently coloured exterior tip beneath the translucent GPUI cutout.
+- Opaque exterior tint avoids that extra transparency but introduces a material
+  discontinuity. This candidate is also not accepted. Do not ship it as the
+  solution or change the terminal's glass to disguise it.
+
+One intermediate diagnostic mistakenly used `Hsla::opacity(1.0)` to force opaque
+coverage. The pinned API multiplies existing alpha; `Hsla::alpha(1.0)` sets an
+absolute alpha. That intermediate comparison was a no-op, not evidence about an
+opaque mask. The corrected comparison still did not justify production delivery.
+
+These observations implicate native/GPU coverage handoff; they do not certify
+every corner or display. Two independently antialiased complementary masks do
+not form a complete surface when composited source-over: their overlap changes
+both terminal coverage and the backdrop contribution. Changing mask colour or
+removing just one layer exchanges bright leakage for another material defect.
+
+A next design to validate is shared raster coverage, retaining the configured
+chrome opacity. If `n` is the desired inside coverage and `a` the chrome alpha,
+the native mask needs `n / (1 - a * (1 - n))` before the GPU paints exterior
+coverage `a * (1 - n)`. This recovers the intended terminal/chrome/backdrop
+weights; define zero coverage explicitly at the singular endpoint. Generate both
+from the same sampled mask, not independent Core Animation and SVG curves.
+Cache only small corner tiles by physical radius, scale and opacity; do not add
+full-pane readback, per-output rasterization or OS-version guesses.
+
+An analytical model over dark/light colours and opacity endpoints bounds an
+8-bit compensated mask's error below half a colour level. This is mathematical
+validation only, not a native GPU/CA integration test. Implementation still needs
+verified sampling/coordinate parity, native mask lifecycle and caching tests,
+integrated light/dark checks, opacity endpoints and transition inspection. The
+existing baseline tests do not cover this unimplemented design. PR #502 remains
+draft, and the rejected diagnostic switches remain outside production.
+
+### Shared Coverage Experiment
+
+The maintainer authorized a separate public renderer experiment. The alpha-only
+comparison did not resolve the dark edge. Suppressing the contour left bright
+corner samples; rectangular native clipping, with either translucent or opaque
+exterior tint, instead left a material discontinuity. None was accepted.
+
+The next candidate shares the GPU SVG raster with the native clip. If `m` is
+the sampled exterior coverage and `a` is Window Chrome alpha, the native inside
+coverage is `(1-m)/(1-a*m)`. At the fully exterior pixel it is zero, including
+the otherwise undefined opaque-chrome endpoint. Source-over then leaves native
+content with exactly its intended `1-m` weight instead of introducing an extra
+backdrop contribution. This is a coverage handoff, not an opaque backing patch.
+The exterior tint, terminal opacity and blur remain unchanged.
+
+The native host and passive header share parent-coordinate coverage tiles; the
+header no longer antialiases another independent curve. Tiles follow the pinned
+SVG renderer's 2x raster and physical-centre linear sampling, with nearest native
+sampling and mirrored corners. The cache is bounded to 16 tiles, at most 256px
+per side (4MiB of cached RGBA data). Moving a tile retains its native image;
+unchanged geometry/material retains its layers. This still has native mask and
+layer costs; no zero-overhead or frame-rate claim follows from it.
+
+A same-window macOS 15 dark comparison shows the bright corner chain reduced:
+one unchanged coordinate went from RGB 55/54/52 to 40/39/37, with adjacent chrome
+37/36/34. A light/glass preview was also inspected, including zoom/restore,
+new split/exit, sidebar and agent-panel toggles. These are local observations,
+not maintainer acceptance or macOS 27/1x hardware certification. The first linked
+candidate run passed all 658 app tests, including material weights at simulated
+1x/1.5x/2x, four corner reflections, opacity changes, native header adoption and
+idle layer reuse. Native builds and formatting passed. The independent preview
+still uses experimental Apple revision `94f3f2c80f3e55170d485b228ad8e5107922b90b`;
+production integration is not authorized by the A/B permission.
+
+### Caption Material Overlap
+
+The maintainer accepted the shared-coverage corner appearance, then reported a
+dark strip between the compact caption and upper panes. Both attached theme
+captures place it at the same boundary. The dark capture contains four physical
+rows of RGB 25/24/24 below caption RGB 37/36/35, before the pane's own edge begins.
+
+Compact layout deliberately uses a -2pt top margin, compensated by the pane's
+2pt padding. Pane content therefore starts at the intended caption boundary,
+but its translucent top gutter extended above the centre viewport and repainted
+the caption material. That duplicate source-over fill is much more apparent
+in the dark theme. Changing the corner coverage or tint cannot fix ownership
+of this straight strip.
+
+Contain the macOS canvas overlay's paint in its actual viewport. Preserve the
+negative layout margin and native pane geometry; workspace-level menus and
+completion popups remain siblings outside this clip. A GPUI regression checks
+that the child still starts at 28pt below a 30pt caption while its paint mask
+starts at 30pt and includes the pane interior. This refinement does not change
+the shared corner tiles, glass/blur settings, or portable rendering paths.
+
+The native build and all 659 linked app tests passed with no exclusions. The
+updated dark preview's previously darkened four rows now match the caption at
+RGB 37/36/34; its pane edge still begins at the same physical row. Light glass
+and the command palette were also inspected. The independent B preview remains
+open in dark mode for maintainer review; no production pin, merge or release
+is implied by these local checks.
+
+The maintainer then accepted the refined preview and requested PR merge and a
+release. PR #502 integrates this exact runtime source and dependency graph;
+the experimental switches are absent. Native Windows/Linux CI remains the
+portable gate, and the macOS 27/1x/FPS verification gaps remain explicit rather
+than being inferred from local acceptance.
