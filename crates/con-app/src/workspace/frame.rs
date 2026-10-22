@@ -72,12 +72,56 @@ pub(super) fn agent_vertical_insets(
 }
 
 pub(crate) fn card_edge(radius: f32, foreground: Hsla, dark: bool) -> gpui::Div {
-    edge(
-        radius,
-        foreground.opacity(if dark { 0.12 } else { 0.075 }),
-        false,
-        true,
+    edge(radius, card_edge_color(foreground, dark), false, true)
+}
+
+fn card_edge_color(foreground: Hsla, dark: bool) -> Hsla {
+    foreground.opacity(if dark { 0.12 } else { 0.075 })
+}
+
+/// GPUI cards do not need the native terminal's complementary corner cutouts.
+/// Draw fill and edge in one quad so their antialiasing shares one contour.
+pub(crate) fn card_material(
+    radius: f32,
+    color: Hsla,
+    foreground: Hsla,
+    dark: bool,
+) -> impl IntoElement {
+    gpui::canvas(
+        |bounds, window, _| {
+            crate::terminal_geometry::snap_terminal_bounds(bounds, window.scale_factor())
+        },
+        move |_, bounds, window, _| {
+            let radii = window_concentric_corners(bounds, radius, window);
+            window.paint_quad(card_material_quad(
+                bounds,
+                radii,
+                color,
+                card_edge_color(foreground, dark),
+                window.scale_factor(),
+            ));
+        },
     )
+    .absolute()
+    .size_full()
+    .top_0()
+    .left_0()
+}
+
+fn card_material_quad(
+    bounds: Bounds<Pixels>,
+    radii: gpui::Corners<Pixels>,
+    color: Hsla,
+    edge: Hsla,
+    scale: f32,
+) -> gpui::PaintQuad {
+    let mut quad = gpui::fill(bounds, color);
+    quad.corner_radii = radii;
+    if radii != gpui::Corners::default() {
+        quad.border_widths = gpui::Edges::all(px(1.0 / scale));
+        quad.border_color = edge;
+    }
+    quad
 }
 
 /// Workspace card fill whose corners follow [`window_concentric_corners`].
@@ -341,6 +385,27 @@ pub(super) fn input_reveal_clip(height: f32, progress: f32, depth: f32) -> gpui:
         .h(px(height))
         .opacity(progress)
         .overflow_hidden()
+}
+
+/// Keep the input's fill, contour and content in the same reveal layer.
+pub(super) fn input_card(
+    width: f32,
+    height: f32,
+    depth: f32,
+    color: Hsla,
+    foreground: Hsla,
+    dark: bool,
+) -> gpui::Div {
+    use gpui::ParentElement;
+    let (left, width) = input_island_geometry(width, depth);
+    gpui::div()
+        .absolute()
+        .bottom_0()
+        .left(px((left - CANVAS_INSET * depth).max(0.0)))
+        .w(px(width))
+        .h(px(height))
+        .overflow_hidden()
+        .child(card_material(INPUT_RADIUS * depth, color, foreground, dark))
 }
 
 #[derive(Default)]
@@ -773,7 +838,6 @@ unsafe extern "C" {
         blue: f64,
         alpha: f64,
     ) -> bool;
-    fn con_terminal_canvas_radius(view: *mut std::ffi::c_void) -> f64;
     fn con_window_corner_radius(view: *mut std::ffi::c_void) -> f64;
     fn con_terminal_canvas_set_clip(
         view: *mut std::ffi::c_void,
@@ -783,6 +847,7 @@ unsafe extern "C" {
         height: f64,
         radius: f64,
     ) -> bool;
+    #[cfg(test)]
     fn con_terminal_canvas_header_corners(
         view: *mut std::ffi::c_void,
         x: f64,
@@ -791,46 +856,45 @@ unsafe extern "C" {
     ) -> u8;
 }
 
-pub(crate) fn header_background(color: Hsla) -> impl IntoElement {
-    gpui::canvas(
-        |_, _, _| {},
-        move |bounds, (), window, _| {
-            use raw_window_handle::HasWindowHandle;
-            let (corners, radius) = HasWindowHandle::window_handle(window)
-                .ok()
-                .and_then(|handle| {
-                    if let raw_window_handle::RawWindowHandle::AppKit(handle) = handle.as_raw() {
-                        Some(unsafe {
-                            (
-                                con_terminal_canvas_header_corners(
-                                    handle.ns_view.as_ptr(),
-                                    f64::from(bounds.left()),
-                                    f64::from(bounds.top()),
-                                    f64::from(bounds.size.width),
-                                ),
-                                con_terminal_canvas_radius(handle.ns_view.as_ptr()) as f32,
-                            )
-                        })
-                    } else {
-                        None
-                    }
-                })
-                .unwrap_or((0, 0.0));
-            let mut quad = gpui::fill(bounds, color);
-            quad.corner_radii.top_left = px(if corners & 1 != 0 { radius } else { 0.0 });
-            quad.corner_radii.top_right = px(if corners & 2 != 0 { radius } else { 0.0 });
-            window.paint_quad(quad);
-        },
-    )
-    .absolute()
-    .size_full()
-    .top_0()
-    .left_0()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gpui_card_material_keeps_fill_alpha_and_a_single_physical_pixel_edge() {
+        let bounds = Bounds::new(point(px(5.0), px(32.0)), gpui::size(px(320.0), px(240.0)));
+        for dark in [false, true] {
+            let foreground = if dark { gpui::white() } else { gpui::black() };
+            let fill = if dark { gpui::black() } else { gpui::white() }.opacity(0.55);
+            for scale in [1.0, 1.5, 2.0] {
+                for radius in [0.0, 4.0, PANE_RADIUS] {
+                    let radii = gpui::Corners::all(px(radius));
+                    let quad = card_material_quad(
+                        bounds,
+                        radii,
+                        fill,
+                        card_edge_color(foreground, dark),
+                        scale,
+                    );
+                    assert!(
+                        quad.background == gpui::Background::from(fill),
+                        "do not make chrome opaque"
+                    );
+                    assert_eq!(quad.corner_radii, radii);
+                    if radius == 0.0 {
+                        assert_eq!(
+                            quad.border_widths,
+                            gpui::Edges::default(),
+                            "clean mode stays flush"
+                        );
+                    } else {
+                        assert_eq!(quad.border_widths, gpui::Edges::all(px(1.0 / scale)));
+                        assert_eq!(quad.border_color, card_edge_color(foreground, dark));
+                    }
+                }
+            }
+        }
+    }
 
     #[gpui::test]
     fn compact_canvas_gutters_do_not_repaint_the_caption(cx: &mut gpui::TestAppContext) {
@@ -1102,36 +1166,51 @@ mod tests {
         };
         struct Reveal {
             progress: f32,
+            depth: f32,
         }
         impl Render for Reveal {
             fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
                 div().relative().w_full().h(px(64.0)).child(
-                    input_reveal_clip(44.0, self.progress, 1.0)
+                    input_reveal_clip(44.0, self.progress, self.depth)
                         .debug_selector(|| "input-reveal-clip".into())
                         .child(
-                            div()
-                                .absolute()
-                                .bottom_0()
-                                .left(px(10.0))
-                                .w(px(300.0))
-                                .h(px(44.0))
-                                .debug_selector(|| "fixed-composer".into()),
+                            input_card(
+                                320.0,
+                                44.0,
+                                self.depth,
+                                gpui::black().opacity(0.6),
+                                gpui::white(),
+                                true,
+                            )
+                            .debug_selector(|| "fixed-composer".into())
+                            .child(gpui::div().size_full()),
                         ),
                 )
             }
         }
-        let (view, cx) = cx.add_window_view(|_, _| Reveal { progress: 1.0 });
+        let (view, cx) = cx.add_window_view(|_, _| Reveal {
+            progress: 1.0,
+            depth: 1.0,
+        });
         cx.simulate_resize(size(px(500.0), px(300.0)));
-        let fixed = cx.debug_bounds("fixed-composer").unwrap();
-        for progress in [0.25, 0.7, 0.4, 1.0] {
+        for depth in [0.0, 0.5, 1.0] {
             view.update(cx, |view, cx| {
-                view.progress = progress;
+                view.depth = depth;
                 cx.notify();
             });
-            assert_eq!(cx.debug_bounds("fixed-composer").unwrap(), fixed);
-            let clip = cx.debug_bounds("input-reveal-clip").unwrap();
-            assert_eq!(clip.bottom(), px(62.0));
-            assert_eq!(clip.size.height, px(44.0));
+            let fixed = cx.debug_bounds("fixed-composer").unwrap();
+            assert_eq!(fixed.left(), px(PANE_INSET * depth));
+            assert_eq!(fixed.size.width, px(320.0 - 2.0 * CARD_OUTER_INSET * depth));
+            for progress in [0.25, 0.7, 0.4, 1.0] {
+                view.update(cx, |view, cx| {
+                    view.progress = progress;
+                    cx.notify();
+                });
+                assert_eq!(cx.debug_bounds("fixed-composer").unwrap(), fixed);
+                let clip = cx.debug_bounds("input-reveal-clip").unwrap();
+                assert_eq!(clip.bottom(), px(64.0 - INPUT_BOTTOM_INSET * depth));
+                assert_eq!(clip.size.height, px(44.0));
+            }
         }
     }
 
