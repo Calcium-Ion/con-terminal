@@ -678,7 +678,8 @@ fn default_titlebar_options(transparent: bool) -> Option<TitlebarOptions> {
         traffic_light_position: settings_panel::traffic_light_position(gpui::px(
             workspace::CAPTION_HEIGHT,
         )),
-        ..Default::default()
+        #[cfg(not(target_os = "macos"))]
+        traffic_light_position: None,
     })
 }
 
@@ -2790,6 +2791,8 @@ fn main() {
         quick_terminal::init(cx);
         #[cfg(target_os = "macos")]
         macos_windowing::install_window_cycle_shortcuts();
+        #[cfg(target_os = "macos")]
+        macos_windowing::install_offscreen_window_recovery(cx);
 
         cx.on_action(|_: &NewWindow, cx: &mut App| {
             if has_open_windows(cx) {
