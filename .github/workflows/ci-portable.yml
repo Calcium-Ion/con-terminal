@@ -142,6 +142,8 @@ jobs:
         run: python3 scripts/docs/validate-manifest.py
       - name: Flatpak icon validation
         run: python3 scripts/release/test-flatpak-icon.py
+      - name: Release publication regression tests
+        run: python3 scripts/release/test-publication.py
       - name: Program status acceptance fixture tests
         run: python3 -m unittest discover -s scripts/terminal -p 'test_*.py'
       - name: Release script syntax checks

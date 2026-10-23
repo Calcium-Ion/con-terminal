@@ -16,6 +16,46 @@ Update the `source-sha256` comment in `packaging/flatpak/aetherpak.yaml`, then r
 AppStream composition and the bundle smoke test; the local size check does not
 replace those checks.
 
+## Updater Publication
+
+Platform workflows upload release assets to a draft and prepare signed feeds at
+`release-staging/<tag>/appcast/` on this repository's `gh-pages` branch. These
+staging paths are public metadata, not updater endpoints; clients continue to
+read the existing `appcast/` feeds. A missing signing key or artifact fails the
+platform workflow instead of silently preparing an incomplete release.
+
+The finalizer reconciles the latest push run for each exact tag and commit.
+SHA-filtered Actions results can lag; it also lists recent runs and filters
+locally. Missing results and API errors receive bounded retries, then fail
+visibly. An observed running platform defers to that platform's completion
+event. A failed platform never passes the gate.
+
+After validating all assets, checksum manifests and staged feeds, the finalizer
+publishes the release. It checks the exact enclosure URLs anonymously, including
+their lengths, before merging the staged entries into the canonical feeds.
+Draft assets therefore never appear in the updater's current feed. Retry merges
+preserve newer entries and unrelated Flatpak/Pages content. A failure after
+promotion is recoverable: a public release still runs the feed validation and
+publication steps. Homebrew updates run only after these steps succeed.
+
+For releases made with this staged workflow, recover without rebuilding or
+creating another tag:
+
+```sh
+gh workflow run release-finalize.yml --ref main -f tag=v0.1.0-beta.N
+```
+
+Older tags lack staged feeds; rerun their original finalizer only after checking
+their payload and canonical feeds. Never manufacture staging data from an
+unverified draft. Local tests use isolated fixtures and a local bare Git remote:
+
+```sh
+python3 scripts/release/test-publication.py
+actionlint .github/workflows/release-*.yml
+```
+
+See [the beta.148 incident](../../postmortem/2026-10-23-updater-draft-download.md).
+
 ## macOS Release Handoff
 
 Dependency setup reuses the runner's installed CMake and logs its version.
@@ -43,7 +83,8 @@ its separate PowerShell installer and existing request timeout.
 
 ### Homebrew Casks
 
-The macOS release workflow generates both casks from its inline template.
+The release finalizer generates both casks from its inline template, after the
+release and its updater downloads are publicly available.
 Use `depends_on :macos` for the platform requirement: old macOS release symbols
 can disappear from Homebrew even when Ruby syntax still parses correctly.
 This does not change the app binary's deployment target.

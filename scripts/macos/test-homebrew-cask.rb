@@ -6,7 +6,7 @@ require "yaml"
 require "cask/cask_loader"
 require "simulate_system"
 
-workflow_path = File.expand_path("../../.github/workflows/release-macos.yml", __dir__)
+workflow_path = File.expand_path("../../.github/workflows/release-finalize.yml", __dir__)
 workflow = YAML.load_file(workflow_path)
 steps = workflow.fetch("jobs").values.flat_map { |job| job.fetch("steps", []) }
 step = steps.find { |entry| entry["name"] == "Update cask formula" }

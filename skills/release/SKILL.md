@@ -26,6 +26,10 @@ the source of truth; do not treat a green build on one platform as a release.
   be downloaded by publication jobs; `native-app-*` archives are internal.
 - A release is public only after all required platform assets and release-gate
   checks pass. Installers and updaters must never consume a draft.
+- Signed feeds are prepared at `release-staging/<tag>/appcast/`, not the live
+  updater endpoints. The finalizer publishes the release, verifies anonymous
+  access to the exact download URLs, then merges canonical feeds and updates
+  Homebrew. Public release metadata alone does not prove updater availability.
 - Never delete and recreate a tag to repair a release. Fix the workflow or
   rerun the affected workflow against the same commit.
 
@@ -101,6 +105,14 @@ curl -fsSL https://con-releases.nowledge.co/install.ps1 >/dev/null
 - If all platform workflows succeeded but the release remains draft, inspect
   the latest `Finalize release` run. Rerun only the finalizer after confirming
   the release gate inputs are complete.
+- Missing Actions results are retried with a recent-run fallback and exact
+  tag/SHA matching. Persistent query errors must fail visibly, not look like a
+  successful publication. Recover staged releases with
+  `gh workflow run release-finalize.yml --ref main -f tag=<tag>`.
+- If promotion succeeded but feed publication failed, rerun the finalizer. It
+  validates public releases too, preserves newer feed entries, and never needs
+  a new tag. Legacy tags without staged metadata require their original
+  finalizer and explicit payload/feed checks instead.
 - If an asset is missing, rerun the platform that owns it and verify its
   checksum before promotion.
 - On the split macOS workflow, rerun failed packaging jobs without rebuilding
