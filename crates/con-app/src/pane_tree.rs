@@ -3806,13 +3806,14 @@ mod tests {
             )
             .unwrap(),
         );
-        for (multiple, title, owner, split, focused, ordinary_strip, unnamed_strip) in [
-            (false, None, None, false, true, false, false),
-            (true, None, None, false, true, true, true),
-            (false, Some("Named"), None, false, true, true, false),
-            (false, None, Some("Owner"), false, true, true, true),
-            (false, None, None, true, true, false, false),
-            (false, None, None, true, false, false, false),
+        for (surface_id, multiple, title, owner, split, focused, ordinary_strip, unnamed_strip) in [
+            (0, false, None, None, false, true, false, false),
+            (1, false, None, None, false, true, false, false),
+            (0, true, None, None, false, true, true, true),
+            (0, false, Some("Named"), None, false, true, true, false),
+            (0, false, None, Some("Owner"), false, true, true, true),
+            (0, false, None, None, true, true, false, false),
+            (0, false, None, None, true, false, false, false),
         ] {
             let (view, cx) = cx.add_window_view(|_, cx| {
                 let terminal = |cx: &mut App| {
@@ -3836,14 +3837,20 @@ mod tests {
                         close_pane_when_last: false,
                     },
                 );
-                if multiple {
+                if multiple || surface_id != 0 {
                     tree.create_surface_in_pane(0, terminal(cx), SurfaceCreateOptions::plain(None));
+                }
+                if surface_id != 0 {
+                    assert!(tree.close_surface(0, false).is_some());
+                    let surfaces = tree.surface_infos(Some(0));
+                    assert_eq!(surfaces.len(), 1);
+                    assert_eq!((surfaces[0].pane_id, surfaces[0].surface_id), (0, 1));
                 }
                 if split {
                     tree.split(SplitDirection::Horizontal, terminal(cx));
                 }
                 if focused {
-                    tree.focus_surface(0);
+                    tree.focus_surface(surface_id);
                 }
                 SurfaceRenameTestView {
                     tree,
@@ -3861,7 +3868,7 @@ mod tests {
                 input.update(cx, |input, cx| input.focus(window, cx));
                 view.update(cx, |view, cx| {
                     view.rename_editor = Some(SurfaceRenameEditor {
-                        surface_id: 0,
+                        surface_id,
                         input: input.clone(),
                     });
                     cx.notify();
@@ -3871,7 +3878,7 @@ mod tests {
             let bounds = cx.debug_bounds("surface-rename-input");
             assert!(
                 bounds.is_some(),
-                "the surface rename input must be rendered"
+                "the surface rename input must be rendered for surface {surface_id}"
             );
             let bounds = bounds.unwrap();
             assert!(bounds.size.width > px(0.0) && bounds.size.height > px(0.0));
@@ -3913,7 +3920,7 @@ mod tests {
             // Confirm leaves the ordinary named-surface strip, without an input.
             view.update(cx, |view, cx| {
                 let title = input.read(cx).value().to_string();
-                assert!(view.tree.rename_surface(0, Some(title)));
+                assert!(view.tree.rename_surface(surface_id, Some(title)));
                 view.rename_editor = None;
                 cx.notify();
             });
@@ -3921,7 +3928,7 @@ mod tests {
             assert!(cx.debug_bounds("surface-rename-input").is_none());
             assert!(cx.debug_bounds("surface-tab-strip-0").is_some());
             view.update(cx, |view, cx| {
-                assert!(view.tree.rename_surface(0, None));
+                assert!(view.tree.rename_surface(surface_id, None));
                 cx.notify();
             });
             cx.run_until_parked();
