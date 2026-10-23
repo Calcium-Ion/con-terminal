@@ -5,12 +5,14 @@ on:
     paths:
       - '.github/workflows/ci-macos-packaging.yml'
       - '.github/workflows/release-macos.yml'
+      - '.github/workflows/release-finalize.yml'
       - 'scripts/macos/**'
   push:
     branches: [main]
     paths:
       - '.github/workflows/ci-macos-packaging.yml'
       - '.github/workflows/release-macos.yml'
+      - '.github/workflows/release-finalize.yml'
       - 'scripts/macos/**'
 
 permissions:
