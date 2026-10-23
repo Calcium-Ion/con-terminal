@@ -287,13 +287,14 @@ impl ConWorkspace {
         });
 
         cx.subscribe_in(&input, window, {
-            move |this, input_entity, event: &InputEvent, _window, cx| {
+            move |this, input_entity, event: &InputEvent, window, cx| {
                 if !matches!(event, InputEvent::PressEnter { .. }) {
                     return;
                 }
                 let value = input_entity.read(cx).value().to_string();
                 this.rename_surface_title(tab_idx, surface_id, value, cx);
                 this.surface_rename = None;
+                this.refocus_active_terminal(window, cx);
                 cx.notify();
             }
         })

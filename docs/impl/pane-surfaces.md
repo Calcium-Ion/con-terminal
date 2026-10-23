@@ -84,7 +84,13 @@ The visual rule is intentionally scoped:
 
 - A **pane** is the visible split region.
 - A **surface** is a tab-like terminal session selected inside one pane.
-- Ordinary one-surface panes show no surface chrome.
+- Ordinary one-surface panes show no surface chrome, except while their surface
+  name is being edited. Starting rename reveals the same compact header and
+  input used by named surfaces, even with pane titles hidden. Cancelling returns
+  to the original chrome; confirming an empty name removes the temporary header
+  unless other surfaces or an owner still require it.
+  Palette dismissal must preserve the rename input's explicit focus; Enter and
+  Escape end the edit and restore terminal focus.
 - Panes with multiple surfaces, an orchestrator owner, or an explicit surface
   title show compact inset tabs in the pane header, replacing its ordinary
   title rather than adding a second row. The default header height is 24 points,
