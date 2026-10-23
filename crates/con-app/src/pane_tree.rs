@@ -3055,10 +3055,14 @@ impl PaneTree {
         // Derive pane title from the active terminal title, falling back to "Terminal"
         let pane_title = Self::terminal_title_or_default(&active.terminal, cx);
 
-        let show_surface_strip =
-            surfaces.len() > 1 || active.owner.is_some() || active.title.is_some();
+        let show_surface_strip = surfaces.len() > 1
+            || active.owner.is_some()
+            || active.title.is_some()
+            || rename_editor
+                .as_ref()
+                .is_some_and(|editor| editor.surface_id == active.id);
 
-        // No splits → no title bar, no surface strip (single-pane layout)
+        // Without splits or a surface strip, render only the terminal.
         // macOS must still run the pane clip prepaint below. An existing
         // surface can arrive here after closing a sibling, zooming or moving
         // into its own tab, and retains its old split mask until cleared.
@@ -3209,16 +3213,19 @@ impl PaneTree {
                     ))
                     .when_some(editing_input, |tab, input| {
                         tab.child(
-                            div().w(px(104.0)).child(
-                                Input::new(&input)
-                                    .xsmall()
-                                    .max_h(pane_bar_height(theme) - px(6.0))
-                                    .py_0()
-                                    .appearance(false)
-                                    .text_size(ui_px(theme, 11.5))
-                                    .line_height(ui_px(theme, 14.0))
-                                    .text_color(theme.foreground),
-                            ),
+                            div()
+                                .debug_selector(|| "surface-rename-input".into())
+                                .w(px(104.0))
+                                .child(
+                                    Input::new(&input)
+                                        .xsmall()
+                                        .max_h(pane_bar_height(theme) - px(6.0))
+                                        .py_0()
+                                        .appearance(false)
+                                        .text_size(ui_px(theme, 11.5))
+                                        .line_height(ui_px(theme, 14.0))
+                                        .text_color(theme.foreground),
+                                ),
                         )
                     })
                     .when(
@@ -3835,6 +3842,181 @@ impl PaneTree {
 mod tests {
     use super::*;
     use ::core::prelude::v1::test;
+
+    struct SurfaceRenameTestView {
+        tree: PaneTree,
+        rename_editor: Option<SurfaceRenameEditor>,
+    }
+
+    impl Render for SurfaceRenameTestView {
+        fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            div().size_full().child(self.tree.render(
+                1,
+                |_, _, _, _| {},
+                |_, _, _| {},
+                |_, _, _| {},
+                |_, _, _| {},
+                |_, _, _| {},
+                |_, _, _| {},
+                |_, _, _| {},
+                self.rename_editor.clone(),
+                cx.theme().title_bar,
+                cx.theme().background,
+                None,
+                0.08,
+                false,
+                0.0,
+                cx,
+            ))
+        }
+    }
+
+    #[gpui::test]
+    fn surface_rename_renders_in_its_pane_and_restores_ordinary_chrome(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        cx.update(gpui_component::init);
+        let app = std::sync::Arc::new(
+            con_ghostty::GhosttyApp::new(
+                None, None, None, None, None, None, None, None, None, None, None, None, None, false,
+            )
+            .unwrap(),
+        );
+        for (surface_id, multiple, title, owner, split, focused, ordinary_strip, unnamed_strip) in [
+            (0, false, None, None, false, true, false, false),
+            (1, false, None, None, false, true, false, false),
+            (0, true, None, None, false, true, true, true),
+            (0, false, Some("Named"), None, false, true, true, false),
+            (0, false, None, Some("Owner"), false, true, true, true),
+            (0, false, None, None, true, true, false, false),
+            (0, false, None, None, true, false, false, false),
+        ] {
+            let (view, cx) = cx.add_window_view(|_, cx| {
+                let terminal = |cx: &mut App| {
+                    let view = cx.new(|cx| {
+                        crate::ghostty_view::GhosttyView::new(
+                            app.clone(),
+                            None,
+                            None,
+                            #[cfg(target_os = "linux")]
+                            None,
+                            14.0,
+                            cx,
+                        )
+                    });
+                    #[cfg(not(target_os = "macos"))]
+                    view.update(cx, |view, _| view.prepare_for_layout_test());
+                    TerminalPane::new(view)
+                };
+                let mut tree = PaneTree::new_with_surface_options(
+                    terminal(cx),
+                    SurfaceCreateOptions {
+                        title: title.map(str::to_owned),
+                        owner: owner.map(str::to_owned),
+                        close_pane_when_last: false,
+                    },
+                );
+                if multiple || surface_id != 0 {
+                    tree.create_surface_in_pane(0, terminal(cx), SurfaceCreateOptions::plain(None));
+                }
+                if surface_id != 0 {
+                    assert!(tree.close_surface(0, false).is_some());
+                    let surfaces = tree.surface_infos(Some(0));
+                    assert_eq!(surfaces.len(), 1);
+                    assert_eq!((surfaces[0].pane_id, surfaces[0].surface_id), (0, 1));
+                }
+                if split {
+                    tree.split(SplitDirection::Horizontal, terminal(cx));
+                }
+                if focused {
+                    tree.focus_surface(surface_id);
+                }
+                SurfaceRenameTestView {
+                    tree,
+                    rename_editor: None,
+                }
+            });
+            cx.simulate_resize(size(px(600.0), px(400.0)));
+            assert_eq!(
+                cx.debug_bounds("surface-tab-strip-0").is_some(),
+                ordinary_strip
+            );
+
+            let input = cx.update(|window, cx| cx.new(|cx| InputState::new(window, cx)));
+            cx.update(|window, cx| {
+                input.update(cx, |input, cx| input.focus(window, cx));
+                view.update(cx, |view, cx| {
+                    view.rename_editor = Some(SurfaceRenameEditor {
+                        surface_id,
+                        input: input.clone(),
+                    });
+                    cx.notify();
+                });
+            });
+            cx.run_until_parked();
+            let bounds = cx.debug_bounds("surface-rename-input");
+            assert!(
+                bounds.is_some(),
+                "the surface rename input must be rendered for surface {surface_id}"
+            );
+            let bounds = bounds.unwrap();
+            assert!(bounds.size.width > px(0.0) && bounds.size.height > px(0.0));
+            assert!(cx.debug_bounds("surface-tab-strip-1").is_none());
+            cx.simulate_input("Renamed");
+            cx.update(|window, cx| {
+                assert!(input.read(cx).focus_handle(cx).is_focused(window));
+                assert_eq!(input.read(cx).value(), "Renamed");
+            });
+
+            // Cancel clears the editor without changing the surface title.
+            view.update(cx, |view, cx| {
+                view.rename_editor = None;
+                cx.notify();
+            });
+            cx.run_until_parked();
+            assert!(cx.debug_bounds("surface-rename-input").is_none());
+            assert_eq!(
+                cx.debug_bounds("surface-tab-strip-0").is_some(),
+                ordinary_strip
+            );
+
+            // An editor outside this pane must not reveal this pane's strip.
+            view.update(cx, |view, cx| {
+                view.rename_editor = Some(SurfaceRenameEditor {
+                    surface_id: if split { 1 } else { usize::MAX },
+                    input: input.clone(),
+                });
+                cx.notify();
+            });
+            cx.run_until_parked();
+            assert_eq!(cx.debug_bounds("surface-rename-input").is_some(), split);
+            assert_eq!(cx.debug_bounds("surface-tab-strip-1").is_some(), split);
+            assert_eq!(
+                cx.debug_bounds("surface-tab-strip-0").is_some(),
+                ordinary_strip
+            );
+
+            // Confirm leaves the ordinary named-surface strip, without an input.
+            view.update(cx, |view, cx| {
+                let title = input.read(cx).value().to_string();
+                assert!(view.tree.rename_surface(surface_id, Some(title)));
+                view.rename_editor = None;
+                cx.notify();
+            });
+            cx.run_until_parked();
+            assert!(cx.debug_bounds("surface-rename-input").is_none());
+            assert!(cx.debug_bounds("surface-tab-strip-0").is_some());
+            view.update(cx, |view, cx| {
+                assert!(view.tree.rename_surface(surface_id, None));
+                cx.notify();
+            });
+            cx.run_until_parked();
+            assert_eq!(
+                cx.debug_bounds("surface-tab-strip-0").is_some(),
+                unnamed_strip
+            );
+        }
+    }
 
     #[cfg(target_os = "macos")]
     #[gpui::test]
