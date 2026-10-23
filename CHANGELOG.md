@@ -4,6 +4,18 @@ All notable changes to con are documented here.
 
 con is still pre-release, so entries may group related beta work while the product shape is stabilizing.
 
+## `v0.1.0-beta.149` - 2026-10-23
+
+### Fixed
+
+**Updates**
+
+- Update notifications and Homebrew updates now wait until the complete release
+  is public and its downloads are available, preventing download errors caused
+  by links to an unpublished release. Publication retries preserve newer updates
+  and recover without rebuilding the app.
+  _(PR [#508](https://github.com/nowledge-co/con-terminal/pull/508) by [@wey-gu](https://github.com/wey-gu))_
+
 ## `v0.1.0-beta.148` - 2026-10-22
 
 ### Changed
