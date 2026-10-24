@@ -1,5 +1,5 @@
-use gpui::{Bounds, Hsla, IntoElement, Pixels, Styled, Window, point, px};
-use std::cell::RefCell;
+use gpui::{Bounds, Hsla, InteractiveElement, IntoElement, Pixels, Styled, Window, point, px};
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 // A split includes its 1pt divider; exterior canvas + pane padding must match it.
@@ -42,13 +42,91 @@ pub(super) fn canvas_depth_for_layout(
 
 /// `caption` is the global caption row's presence. Without tabs its controls
 /// sit midway between the window top and the card top, so the row's lower half
-/// is the card's top clearance. Tabs keep the lateral 5pt gap below their fill.
+/// is the card's top clearance. Tabs keep the lateral 5pt gap below their selected surface.
 pub(super) fn canvas_top_inset(depth: f32, horizontal_tabs: f32, caption: f32) -> f32 {
     let tabs = horizontal_tabs.clamp(0.0, 1.0);
-    let tab_bottom_clearance = (super::TOP_BAR_TABS_HEIGHT - super::TOP_BAR_TAB_HEIGHT) * 0.5;
+    let tab_bottom_clearance = (super::TOP_BAR_TABS_HEIGHT - super::TOP_BAR_TAB_HEIGHT) * 0.5
+        + super::TOP_BAR_TAB_SELECTION_INSET;
     let caption_clearance =
         (CANVAS_INSET + PANE_INSET) * (1.0 - tabs) + tab_bottom_clearance * tabs;
     (CANVAS_INSET - caption_clearance * caption.clamp(0.0, 1.0)) * depth
+}
+
+/// Allow the pane's rounded top to enter the caption's unused bottom clearance.
+/// Content retains its original layout origin; only the viewport clip expands.
+pub(super) fn canvas_top_bleed(depth: f32, tabs: f32, caption: f32) -> f32 {
+    -(canvas_top_inset(depth, tabs, caption) + PANE_INSET * depth).min(0.0)
+}
+
+fn caption_background_regions(
+    bounds: Bounds<Pixels>,
+    canvas: Option<Bounds<Pixels>>,
+    scale: f32,
+) -> [Bounds<Pixels>; 4] {
+    let bounds = crate::terminal_geometry::snap_terminal_bounds(bounds, scale);
+    let owned_by_canvas = canvas
+        .map(|canvas| {
+            let canvas = crate::terminal_geometry::snap_terminal_bounds(canvas, scale);
+            // The agent column shares the canvas's top and owns its own chrome.
+            Bounds::from_corners(
+                point(
+                    canvas.left().max(bounds.left()),
+                    canvas.top().max(bounds.top()),
+                ),
+                bounds.bottom_right(),
+            )
+            .intersect(&bounds)
+        })
+        .filter(|overlap| overlap.size.width > px(0.0) && overlap.size.height > px(0.0))
+        .unwrap_or_else(|| Bounds::new(bounds.bottom_right(), gpui::size(px(0.0), px(0.0))));
+    surround_strips(bounds, owned_by_canvas)
+}
+
+/// Frame-local paint ownership. All prepaint completes before paint, so the
+/// caption can exclude the actual canvas clip rather than infer its rounding.
+#[derive(Default)]
+pub(super) struct CaptionBackground {
+    canvas: Rc<Cell<Option<Bounds<Pixels>>>>,
+}
+
+impl CaptionBackground {
+    pub fn track_canvas(&self, viewport: gpui::Div) -> gpui::Div {
+        use gpui::ParentElement;
+        let geometry = self.canvas.clone();
+        viewport.child(
+            gpui::canvas(
+                move |bounds, window, _| {
+                    geometry.set(Some(crate::terminal_geometry::snap_terminal_bounds(
+                        bounds,
+                        window.scale_factor(),
+                    )));
+                },
+                |_, _, _, _| {},
+            )
+            .absolute()
+            .inset_0(),
+        )
+    }
+
+    pub fn render(&self, color: Hsla) -> impl IntoElement + use<> {
+        let geometry = self.canvas.clone();
+        gpui::canvas(
+            |bounds, window, _| {
+                crate::terminal_geometry::snap_terminal_bounds(bounds, window.scale_factor())
+            },
+            move |_, bounds, window, _| {
+                for strip in
+                    caption_background_regions(bounds, geometry.get(), window.scale_factor())
+                {
+                    if strip.size.width > px(0.0) && strip.size.height > px(0.0) {
+                        window.paint_quad(gpui::fill(strip, color));
+                    }
+                }
+            },
+        )
+        .absolute()
+        .inset_0()
+    }
 }
 
 pub(crate) fn pane_card_geometry(split: bool, depth: f32) -> (f32, f32) {
@@ -353,14 +431,10 @@ pub(super) fn input_safe_height(height: f32, progress: f32, depth: f32) -> f32 {
     (height + (CARD_GAP - PANE_INSET + INPUT_BOTTOM_INSET) * depth) * progress.clamp(0.0, 1.0)
 }
 
-pub(super) fn input_reserved_height(height: f32, visible: bool, progress: f32, depth: f32) -> f32 {
-    // Reserve once when opening and retain the viewport through closing. A
-    // second resize at the reveal endpoint makes one interaction look like two.
-    if visible || progress > 0.0 {
-        input_safe_height(height, 1.0, depth)
-    } else {
-        0.0
-    }
+pub(super) fn input_reserved_height(height: f32, _visible: bool, progress: f32, depth: f32) -> f32 {
+    // Geometry follows the same sample as the reveal. Holding the final height
+    // until fade-out completes makes the native terminal expand one beat late.
+    input_safe_height(height, progress, depth)
 }
 
 pub(super) fn caption_width(window: f32, sidebar: f32, dock: f32, leading: f32) -> f32 {
@@ -379,15 +453,100 @@ pub(super) fn input_reveal_clip(height: f32, progress: f32, depth: f32) -> gpui:
     let progress = progress.clamp(0.0, 1.0);
     gpui::div()
         .absolute()
-        .bottom(px(INPUT_BOTTOM_INSET * depth))
+        .bottom(px(INPUT_BOTTOM_INSET * depth * progress))
         .left_0()
         .w_full()
-        .h(px(height))
-        .opacity(progress)
+        .h(px(height * progress))
         .overflow_hidden()
 }
 
-/// Keep the input's fill, contour and content in the same reveal layer.
+#[derive(Clone, Copy, Default)]
+struct InputTrayBounds {
+    card: Option<Bounds<Pixels>>,
+    reveal: Option<Bounds<Pixels>>,
+}
+
+impl InputTrayBounds {
+    fn surround_regions(self, bounds: Bounds<Pixels>) -> [Bounds<Pixels>; 4] {
+        let visible = self
+            .card
+            .zip(self.reveal)
+            .map(|(card, reveal)| card.intersect(&reveal).intersect(&bounds))
+            .filter(|visible| visible.size.width > px(0.0) && visible.size.height > px(0.0))
+            .unwrap_or_else(|| Bounds::new(bounds.origin, gpui::size(px(0.0), px(0.0))));
+        surround_strips(bounds, visible)
+    }
+}
+
+/// Frame-local geometry shared between the tray and its exterior chrome.
+/// All prepaint completes before paint: sample actual snapped layout bounds,
+/// then subtract only the *visible* card, not the full card sliding below it.
+#[derive(Default)]
+pub(super) struct InputTray {
+    bounds: Rc<Cell<InputTrayBounds>>,
+}
+
+impl InputTray {
+    pub fn track_card(&self, card: gpui::Div) -> gpui::Div {
+        self.track(card, true)
+    }
+
+    pub fn track_reveal(&self, reveal: gpui::Div) -> gpui::Div {
+        self.track(reveal, false)
+    }
+
+    fn track(&self, element: gpui::Div, card: bool) -> gpui::Div {
+        use gpui::ParentElement;
+        let geometry = self.bounds.clone();
+        element.child(
+            gpui::canvas(
+                move |bounds, window, _| {
+                    let bounds = crate::terminal_geometry::snap_terminal_bounds(
+                        bounds,
+                        window.scale_factor(),
+                    );
+                    let mut next = geometry.get();
+                    if card {
+                        next.card = Some(bounds);
+                    } else {
+                        next.reveal = Some(bounds);
+                    }
+                    geometry.set(next);
+                },
+                |_, _, _, _| {},
+            )
+            .absolute()
+            .top_0()
+            .left_0()
+            .size_full(),
+        )
+    }
+
+    pub fn surround(&self, color: Hsla) -> impl IntoElement + use<> {
+        let geometry = self.bounds.clone();
+        gpui::canvas(
+            |bounds, window, _| {
+                crate::terminal_geometry::snap_terminal_bounds(bounds, window.scale_factor())
+            },
+            move |_, bounds, window, _| {
+                window.with_content_mask(Some(gpui::ContentMask { bounds }), |window| {
+                    for strip in geometry.get().surround_regions(bounds) {
+                        if strip.size.width > px(0.0) && strip.size.height > px(0.0) {
+                            window.paint_quad(gpui::fill(strip, color));
+                        }
+                    }
+                });
+            },
+        )
+        .absolute()
+        .top_0()
+        .left_0()
+        .size_full()
+    }
+}
+
+/// Use the native terminal's exact coverage field rather than a second rounded
+/// quad raster. The material stays at its configured alpha throughout reveal.
 pub(super) fn input_card(
     width: f32,
     height: f32,
@@ -395,17 +554,134 @@ pub(super) fn input_card(
     color: Hsla,
     foreground: Hsla,
     dark: bool,
+    surround: Hsla,
 ) -> gpui::Div {
     use gpui::ParentElement;
     let (left, width) = input_island_geometry(width, depth);
     gpui::div()
         .absolute()
-        .bottom_0()
+        .top_0()
         .left(px((left - CANVAS_INSET * depth).max(0.0)))
         .w(px(width))
         .h(px(height))
         .overflow_hidden()
-        .child(card_material(INPUT_RADIUS * depth, color, foreground, dark))
+        .child(input_material(INPUT_RADIUS * depth, color, surround))
+        .child(
+            card_edge(INPUT_RADIUS * depth, foreground, dark)
+                .inset_0()
+                .debug_selector(|| "input-card-edge".into()),
+        )
+}
+
+fn material_body_strips(bounds: Bounds<Pixels>, corners: &[Bounds<Pixels>]) -> Vec<Bounds<Pixels>> {
+    let mut strips = vec![bounds];
+    for corner in corners {
+        strips = strips
+            .into_iter()
+            .flat_map(|strip| {
+                if strip.intersects(corner) {
+                    surround_strips(strip, strip.intersect(corner))
+                        .into_iter()
+                        .filter(|strip| strip.size.width > px(0.0) && strip.size.height > px(0.0))
+                        .collect::<Vec<_>>()
+                } else {
+                    vec![strip]
+                }
+            })
+            .collect();
+    }
+    strips
+}
+
+fn input_corner_image(
+    tile: &NativeCornerCoverage,
+    color: Hsla,
+    chrome_alpha: f32,
+) -> std::sync::Arc<gpui::RenderImage> {
+    type Key = (usize, usize, u32, [u32; 4]);
+    type Cache = Vec<(Key, std::sync::Arc<gpui::RenderImage>)>;
+    thread_local! {
+        static CACHE: RefCell<Cache> = const { RefCell::new(Vec::new()) };
+    }
+    let color: gpui::Rgba = color.into();
+    let key = (
+        tile.side,
+        tile.corner,
+        chrome_alpha.to_bits(),
+        [
+            color.r.to_bits(),
+            color.g.to_bits(),
+            color.b.to_bits(),
+            color.a.to_bits(),
+        ],
+    );
+    CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if let Some((_, image)) = cache.iter().find(|(old, _)| *old == key) {
+            return image.clone();
+        }
+        // RenderImage consumes straight-alpha BGRA. Match the native mask's
+        // physical pixels, including its compensation for translucent chrome.
+        let channel = |value: f32| (value * 255.0).round().clamp(0.0, 255.0) as u8;
+        let mut bytes = vec![0; tile.side * tile.side * 4];
+        for (pixel, coverage) in bytes.chunks_exact_mut(4).zip(tile.rgba.chunks_exact(4)) {
+            pixel.copy_from_slice(&[
+                channel(color.b),
+                channel(color.g),
+                channel(color.r),
+                (f32::from(coverage[3]) * color.a).round().clamp(0.0, 255.0) as u8,
+            ]);
+        }
+        let pixels = image::RgbaImage::from_raw(tile.side as u32, tile.side as u32, bytes).unwrap();
+        let image = std::sync::Arc::new(gpui::RenderImage::new(vec![image::Frame::new(pixels)]));
+        if cache.len() >= 32 {
+            cache.remove(0);
+        }
+        cache.push((key, image.clone()));
+        image
+    })
+}
+
+fn input_material(radius: f32, color: Hsla, surround: Hsla) -> impl IntoElement {
+    gpui::canvas(
+        move |bounds, window, _| {
+            let bounds =
+                crate::terminal_geometry::snap_terminal_bounds(bounds, window.scale_factor());
+            let radii = window_concentric_corners(bounds, radius, window);
+            let coverage = native_corner_coverage(bounds, radii, window.scale_factor(), surround.a)
+                .unwrap_or_else(|error| {
+                    log::error!("failed to prepare input corner coverage: {error}");
+                    Vec::new()
+                });
+            let corners = coverage.iter().map(|tile| tile.bounds).collect::<Vec<_>>();
+            let images = coverage
+                .iter()
+                .map(|tile| (tile.bounds, input_corner_image(tile, color, surround.a)))
+                .collect::<Vec<_>>();
+            (
+                material_body_strips(bounds, &corners),
+                images,
+                corner_cutouts(bounds, radii),
+            )
+        },
+        move |_, (strips, images, corners), window, cx| {
+            for strip in strips {
+                window.paint_quad(gpui::fill(strip, color));
+            }
+            for (bounds, image) in images {
+                if let Err(error) =
+                    window.paint_image(bounds, bounds, Default::default(), image, 0, false)
+                {
+                    log::error!("failed to paint input corner: {error}");
+                }
+            }
+            for corner in corners {
+                corner.paint(surround, window, cx);
+            }
+        },
+    )
+    .absolute()
+    .size_full()
 }
 
 #[derive(Default)]
@@ -594,6 +870,7 @@ impl CornerCutout {
 pub(crate) struct NativeCornerCoverage {
     pub bounds: Bounds<Pixels>,
     pub side: usize,
+    corner: usize,
     pub rgba: std::sync::Arc<[u8]>,
 }
 
@@ -684,7 +961,12 @@ pub(crate) fn native_corner_coverage(
                 });
                 bytes
             };
-            Ok(NativeCornerCoverage { bounds, side, rgba })
+            Ok(NativeCornerCoverage {
+                bounds,
+                side,
+                corner: corner.mask,
+                rgba,
+            })
         })
         .collect()
 }
@@ -861,6 +1143,61 @@ mod tests {
     use super::*;
 
     #[test]
+    fn input_material_partitions_the_body_and_reuses_native_corner_coverage() {
+        let bounds = Bounds::new(point(px(5.0), px(20.0)), gpui::size(px(120.0), px(44.0)));
+        let radii = gpui::Corners {
+            top_left: px(8.0),
+            top_right: px(4.0),
+            bottom_left: px(10.0),
+            bottom_right: px(6.0),
+        };
+        let rgba = gpui::Rgba {
+            r: 0.2,
+            g: 0.4,
+            b: 0.7,
+            a: 0.63,
+        };
+        let color: Hsla = rgba.into();
+        for scale in [1.0, 1.5, 2.0] {
+            let tiles = native_corner_coverage(bounds, radii, scale, 0.8).unwrap();
+            let corners = tiles.iter().map(|tile| tile.bounds).collect::<Vec<_>>();
+            let strips = material_body_strips(bounds, &corners);
+            for y in 0..(44.0 * scale) as usize {
+                for x in 0..(120.0 * scale) as usize {
+                    let p = point(
+                        bounds.left() + px((x as f32 + 0.5) / scale),
+                        bounds.top() + px((y as f32 + 0.5) / scale),
+                    );
+                    let count = strips
+                        .iter()
+                        .chain(corners.iter())
+                        .filter(|rect| rect.contains(&p))
+                        .count();
+                    assert_eq!(count, 1, "overlap or hole in input material at {p:?}");
+                }
+            }
+            for tile in tiles {
+                let image = input_corner_image(&tile, color, 0.8);
+                let again = input_corner_image(&tile, color, 0.8);
+                assert!(
+                    std::sync::Arc::ptr_eq(&image, &again),
+                    "moving the card must not re-upload its corners"
+                );
+                let bytes = image.as_bytes(0).unwrap();
+                for (pixel, coverage) in bytes.chunks_exact(4).zip(tile.rgba.chunks_exact(4)) {
+                    assert_eq!(&pixel[..3], &[179, 102, 51], "straight-alpha BGRA");
+                    assert!((f32::from(pixel[3]) - f32::from(coverage[3]) * rgba.a).abs() <= 0.51);
+                }
+                let transparent = input_corner_image(&tile, color.opacity(0.2), 0.8);
+                assert!(
+                    !std::sync::Arc::ptr_eq(&image, &transparent),
+                    "opacity changes must invalidate tinted pixels"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn gpui_card_material_keeps_fill_alpha_and_a_single_physical_pixel_edge() {
         let bounds = Bounds::new(point(px(5.0), px(32.0)), gpui::size(px(320.0), px(240.0)));
         for dark in [false, true] {
@@ -940,6 +1277,132 @@ mod tests {
             mask.contains(&point(px(300.0), px(32.0))),
             "do not clip pane content"
         );
+    }
+
+    #[gpui::test]
+    fn selected_tab_clearance_does_not_clip_the_pane_top_or_shift_the_bottom(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        use gpui::{ParentElement, Render, size};
+        struct Fixture(f32, Rc<Cell<Option<Bounds<Pixels>>>>);
+        impl Render for Fixture {
+            fn render(&mut self, _: &mut Window, _: &mut gpui::Context<Self>) -> impl IntoElement {
+                let backing = CaptionBackground::default();
+                self.1 = backing.canvas.clone();
+                let bleed = canvas_top_bleed(1.0, self.0, 1.0);
+                let (agent_top, agent_bottom) = agent_vertical_insets(1.0, false, 0.0, self.0, 1.0);
+                gpui::div()
+                    .size_full()
+                    .flex()
+                    .flex_col()
+                    .child(
+                        gpui::div()
+                            .h(px(super::super::TOP_BAR_TABS_HEIGHT))
+                            .flex_shrink_0(),
+                    )
+                    .child(
+                        gpui::div()
+                            .relative()
+                            .flex()
+                            .flex_1()
+                            .min_h_0()
+                            .child(
+                                backing
+                                    .track_canvas(canvas_viewport().mt(px(-bleed)).pt(px(bleed)))
+                                    .child(
+                                        gpui::div()
+                                            .relative()
+                                            .flex()
+                                            .flex_col()
+                                            .flex_1()
+                                            .min_h_0()
+                                            .child(
+                                                gpui::div()
+                                                    .relative()
+                                                    .flex_1()
+                                                    .m(px(CANVAS_INSET))
+                                                    .mt(px(canvas_top_inset(1.0, self.0, 1.0)))
+                                                    .child(
+                                                        gpui::div()
+                                                            .absolute()
+                                                            .inset_0()
+                                                            .m(px(PANE_INSET))
+                                                            .debug_selector(|| {
+                                                                "pane-clearance".into()
+                                                            }),
+                                                    ),
+                                            ),
+                                    ),
+                            )
+                            .child(
+                                gpui::div()
+                                    .w(px(100.0))
+                                    .mt(px(agent_top.min(0.0)))
+                                    .pt(px(agent_top.max(0.0)))
+                                    .pb(px(agent_bottom))
+                                    .child(
+                                        gpui::div()
+                                            .size_full()
+                                            .debug_selector(|| "agent-clearance".into()),
+                                    ),
+                            ),
+                    )
+            }
+        }
+        let (view, cx) = cx.add_window_view(|_, _| Fixture(1.0, Rc::default()));
+        cx.simulate_resize(size(px(600.0), px(400.0)));
+        for scale in [1.0, 1.5, 2.0] {
+            cx.simulate_scale_factor_change(scale);
+            for tabs in [0.0, 0.25, 0.5, 0.75, 1.0] {
+                view.update(cx, |view, cx| {
+                    view.0 = tabs;
+                    cx.notify();
+                });
+                let pane = cx.debug_bounds("pane-clearance").unwrap();
+                let agent = cx.debug_bounds("agent-clearance").unwrap();
+                assert_eq!(pane.top(), agent.top());
+                assert_eq!(pane.bottom(), agent.bottom());
+                assert!(
+                    (pane.bottom().as_f32() - (400.0 - CARD_OUTER_INSET)).abs() <= 0.51 / scale,
+                    "preserve the bottom baseline within layout's physical-pixel rounding"
+                );
+                // Geometry alone misses source-over seams. The caption must give
+                // the reclaimed band to the canvas/agent instead of painting it
+                // again beneath their translucent chrome. Sidebar chrome starts
+                // below the caption and must keep its original backing.
+                let caption = Bounds::new(
+                    point(px(0.0), px(0.0)),
+                    size(px(600.0), px(super::super::TOP_BAR_TABS_HEIGHT)),
+                );
+                let canvas = view.read_with(cx, |view, _| view.1.get()).unwrap();
+                let pane_top = crate::terminal_geometry::snap_terminal_bounds(pane, scale).top();
+                for sidebar in [0.0, 100.0] {
+                    let canvas = Bounds::from_corners(
+                        point(px(sidebar), canvas.top()),
+                        canvas.bottom_right(),
+                    );
+                    let strips = caption_background_regions(caption, Some(canvas), scale);
+                    for x in [50.0, 200.0, 550.0] {
+                        for y in 0..(super::super::TOP_BAR_TABS_HEIGHT * scale) as usize {
+                            let p = point(px(x), px((y as f32 + 0.5) / scale));
+                            let caption_layers =
+                                strips.iter().filter(|strip| strip.contains(&p)).count();
+                            let canvas_layers = usize::from(x >= sidebar && p.y >= pane_top);
+                            assert_eq!(
+                                caption_layers + canvas_layers,
+                                1,
+                                "caption/canvas overlap or hole at {p:?}, tabs={tabs}, scale={scale}"
+                            );
+                        }
+                    }
+                }
+                let clip_top = canvas.top();
+                assert!(
+                    pane_top >= clip_top,
+                    "pane top must remain inside the viewport"
+                );
+            }
+        }
     }
 
     #[test]
@@ -1062,13 +1525,14 @@ mod tests {
     }
 
     #[test]
-    fn horizontal_tabs_do_not_double_the_top_clearance() {
+    fn horizontal_tabs_match_selected_surface_clearance_to_pane_gutters() {
         let bounds = Bounds::new(
             point(px(0.0), px(super::super::TOP_BAR_TABS_HEIGHT)),
             gpui::size(px(600.0), px(400.0)),
         );
-        let tab_bottom =
-            (super::super::TOP_BAR_TABS_HEIGHT + super::super::TOP_BAR_TAB_HEIGHT) * 0.5;
+        let tab_bottom = (super::super::TOP_BAR_TABS_HEIGHT + super::super::TOP_BAR_TAB_HEIGHT)
+            * 0.5
+            - super::super::TOP_BAR_TAB_SELECTION_INSET;
         let inner = canvas_inner_bounds(bounds, 1.0, 1.0, 1.0);
         let pane_top = inner.top().as_f32() + PANE_INSET;
         assert_eq!(pane_top - tab_bottom, CANVAS_INSET + PANE_INSET);
@@ -1160,7 +1624,7 @@ mod tests {
     }
 
     #[gpui::test]
-    fn input_fades_without_wiping_or_moving_the_composer(cx: &mut gpui::TestAppContext) {
+    fn input_reveal_preserves_content_size_while_clipping(cx: &mut gpui::TestAppContext) {
         use gpui::{
             Context, InteractiveElement, IntoElement, ParentElement, Render, Window, div, size,
         };
@@ -1181,6 +1645,7 @@ mod tests {
                                 gpui::black().opacity(0.6),
                                 gpui::white(),
                                 true,
+                                gpui::white().opacity(0.8),
                             )
                             .debug_selector(|| "fixed-composer".into())
                             .child(gpui::div().size_full()),
@@ -1206,16 +1671,30 @@ mod tests {
                     view.progress = progress;
                     cx.notify();
                 });
-                assert_eq!(cx.debug_bounds("fixed-composer").unwrap(), fixed);
+                let content = cx.debug_bounds("fixed-composer").unwrap();
+                assert_eq!(content.size, fixed.size);
+                assert_eq!(content.left(), fixed.left());
+                assert_eq!(
+                    content,
+                    cx.debug_bounds("input-card-edge").unwrap(),
+                    "the fine contour must cover the entire moving card"
+                );
+                assert_eq!(
+                    content.top(),
+                    cx.debug_bounds("input-reveal-clip").unwrap().top()
+                );
                 let clip = cx.debug_bounds("input-reveal-clip").unwrap();
-                assert_eq!(clip.bottom(), px(64.0 - INPUT_BOTTOM_INSET * depth));
-                assert_eq!(clip.size.height, px(44.0));
+                assert!(
+                    (clip.bottom().as_f32() - (64.0 - INPUT_BOTTOM_INSET * depth * progress)).abs()
+                        <= 0.51
+                );
+                assert!((clip.size.height.as_f32() - 44.0 * progress).abs() <= 0.51);
             }
         }
     }
 
     #[gpui::test]
-    fn input_viewport_stays_stable_through_reveal_reversal_and_completion(
+    fn input_viewport_tracks_reveal_reversal_without_an_endpoint_jump(
         cx: &mut gpui::TestAppContext,
     ) {
         use gpui::{
@@ -1224,9 +1703,12 @@ mod tests {
         struct Reveal {
             progress: f32,
             visible: bool,
+            geometry: Rc<Cell<InputTrayBounds>>,
         }
         impl Render for Reveal {
             fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+                let tray = InputTray::default();
+                self.geometry = tray.bounds.clone();
                 div()
                     .relative()
                     .flex()
@@ -1241,22 +1723,35 @@ mod tests {
                     )
                     .child(
                         div()
+                            .relative()
+                            .debug_selector(|| "input-reservation".into())
                             .h(px(input_reserved_height(
                                 44.0,
                                 self.visible,
                                 self.progress,
                                 1.0,
                             )))
-                            .flex_shrink_0(),
+                            .flex_shrink_0()
+                            .child(tray.surround(gpui::black().opacity(0.9))),
                     )
                     .child(
-                        input_reveal_clip(44.0, self.progress, 1.0).child(
-                            div()
-                                .absolute()
-                                .bottom_0()
-                                .h(px(44.0))
-                                .w_full()
-                                .debug_selector(|| "island-frame".into()),
+                        tray.track_reveal(
+                            input_reveal_clip(44.0, self.progress, 1.0)
+                                .debug_selector(|| "actual-input-reveal".into())
+                                .child(
+                                    tray.track_card(
+                                        input_card(
+                                            500.0,
+                                            44.0,
+                                            1.0,
+                                            gpui::black().opacity(0.8),
+                                            gpui::white(),
+                                            true,
+                                            gpui::black().opacity(0.9),
+                                        )
+                                        .debug_selector(|| "island-frame".into()),
+                                    ),
+                                ),
                         ),
                     )
             }
@@ -1264,15 +1759,16 @@ mod tests {
         let (view, cx) = cx.add_window_view(|_, _| Reveal {
             progress: 0.0,
             visible: false,
+            geometry: Rc::default(),
         });
         cx.simulate_resize(size(px(500.0), px(400.0)));
         let island = cx.debug_bounds("island-frame").unwrap();
         for (progress, visible, expected_output) in [
-            (0.1, true, 251.0),
-            (0.7, true, 251.0),
+            (0.1, true, 295.1),
+            (0.7, true, 265.7),
             (1.0, true, 251.0),
-            (0.6, false, 251.0),
-            (0.8, true, 251.0),
+            (0.6, false, 270.6),
+            (0.8, true, 260.8),
             (1.0, true, 251.0),
             (0.0, false, 300.0),
         ] {
@@ -1281,11 +1777,53 @@ mod tests {
                 view.visible = visible;
                 cx.notify();
             });
-            assert_eq!(cx.debug_bounds("island-frame").unwrap(), island);
-            assert_eq!(
-                cx.debug_bounds("output-viewport").unwrap().size.height,
-                px(expected_output)
+            assert_eq!(cx.debug_bounds("island-frame").unwrap().size, island.size);
+            assert!(
+                (cx.debug_bounds("output-viewport")
+                    .unwrap()
+                    .size
+                    .height
+                    .as_f32()
+                    - expected_output)
+                    .abs()
+                    <= 0.51
             );
+            let reservation = cx.debug_bounds("input-reservation").unwrap();
+            let card = cx.debug_bounds("island-frame").unwrap();
+            let reveal = cx.debug_bounds("actual-input-reveal").unwrap();
+            let geometry = view.read_with(cx, |view, _| view.geometry.get());
+            if progress > 0.0 {
+                assert_eq!(geometry.card, Some(card));
+                assert_eq!(geometry.reveal, Some(reveal));
+            }
+            // A full card extends below the viewport during closing. Chrome
+            // must cover the gap below its reveal mask, even at fractional DPI.
+            for scale in [1.0, 1.5, 2.0] {
+                let snap = |bounds| crate::terminal_geometry::snap_terminal_bounds(bounds, scale);
+                let reservation = snap(reservation);
+                let geometry = InputTrayBounds {
+                    card: geometry.card.map(snap),
+                    reveal: geometry.reveal.map(snap),
+                };
+                let regions = geometry.surround_regions(reservation);
+                for y in 0..(reservation.size.height.as_f32() * scale).round() as usize {
+                    for x in [0.5, 250.5, 499.5] {
+                        let p = point(px(x), reservation.top() + px((y as f32 + 0.5) / scale));
+                        if !reservation.contains(&p) {
+                            continue;
+                        }
+                        let visible = geometry
+                            .card
+                            .zip(geometry.reveal)
+                            .is_some_and(|(card, reveal)| card.contains(&p) && reveal.contains(&p));
+                        assert_eq!(
+                            regions.iter().filter(|region| region.contains(&p)).count(),
+                            usize::from(!visible),
+                            "exposed or double-painted tray pixel at {p:?}, progress={progress}, scale={scale}"
+                        );
+                    }
+                }
+            }
         }
     }
 

@@ -77,6 +77,7 @@ mod motion;
 mod mouse_sequence;
 mod pane_tree;
 mod process_name;
+mod provider_icons;
 mod reduced_motion;
 mod settings_panel;
 mod sidebar;
@@ -89,7 +90,6 @@ mod terminal_context_menu;
 mod terminal_env;
 #[cfg(any(target_os = "macos", test))]
 mod terminal_file_link;
-#[cfg(any(target_os = "macos", target_os = "windows", test))]
 mod terminal_geometry;
 #[cfg(any(target_os = "windows", target_os = "linux"))]
 mod terminal_ime;

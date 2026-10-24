@@ -878,6 +878,7 @@ impl AgentPanel {
             ProviderKind::ChatGPT => "ChatGPT",
             ProviderKind::GitHubCopilot => "Copilot",
             ProviderKind::OpenAICompatible => "Compat",
+            ProviderKind::Magpie => "Magpie",
             ProviderKind::MiniMax => "MiniMax",
             ProviderKind::Moonshot => "Moonshot",
             ProviderKind::ZAI => "Z.AI",
@@ -887,29 +888,16 @@ impl AgentPanel {
             ProviderKind::Ollama => "Ollama",
             ProviderKind::OpenRouter => "OpenRouter",
             ProviderKind::Mistral => "Mistral",
+            ProviderKind::Together => "Together",
+            ProviderKind::Cohere => "Cohere",
+            ProviderKind::Perplexity => "Perplexity",
+            ProviderKind::XAI => "xAI",
             _ => "Provider",
         }
     }
 
     fn provider_icon_path(provider: &ProviderKind) -> &'static str {
-        match provider {
-            ProviderKind::Anthropic => "providers/anthropic.svg",
-            ProviderKind::OpenAI => "providers/openai.svg",
-            ProviderKind::CodexLocal => "phosphor/plugs-connected.svg",
-            ProviderKind::ChatGPT => "providers/openai.svg",
-            ProviderKind::GitHubCopilot => "providers/githubcopilot.svg",
-            ProviderKind::OpenAICompatible => "phosphor/plugs-connected.svg",
-            ProviderKind::MiniMax => "providers/minimax.svg",
-            ProviderKind::Moonshot => "providers/moonshot.svg",
-            ProviderKind::ZAI => "providers/zai.svg",
-            ProviderKind::DeepSeek => "providers/deepseek.svg",
-            ProviderKind::Groq => "providers/groq.svg",
-            ProviderKind::Gemini => "providers/gemini.svg",
-            ProviderKind::Ollama => "providers/ollama.svg",
-            ProviderKind::OpenRouter => "providers/openrouter.svg",
-            ProviderKind::Mistral => "providers/mistral.svg",
-            _ => "phosphor/plugs-connected.svg",
-        }
+        crate::provider_icons::provider_icon_path(provider)
     }
 
     fn provider_option(provider: ProviderKind) -> ProviderSelectItem {
@@ -930,6 +918,7 @@ impl AgentPanel {
             ProviderKind::ChatGPT,
             ProviderKind::GitHubCopilot,
             ProviderKind::OpenAICompatible,
+            ProviderKind::Magpie,
             ProviderKind::MiniMax,
             ProviderKind::Moonshot,
             ProviderKind::ZAI,
@@ -947,6 +936,9 @@ impl AgentPanel {
 
     fn provider_is_configured(config: &AgentConfig, provider: &ProviderKind) -> bool {
         let sidebar_provider = Self::session_sidebar_provider_kind(provider);
+        if sidebar_provider == ProviderKind::Magpie {
+            return config.provider == ProviderKind::Magpie || config.providers.magpie.is_some();
+        }
         if sidebar_provider == ProviderKind::CodexLocal {
             // Explicit local selection/config is enough: auth is owned by Codex,
             // not a Con key/cache. Never hide the active local route behind keys.
@@ -1001,6 +993,7 @@ impl AgentPanel {
             ProviderKind::ChatGPT,
             ProviderKind::GitHubCopilot,
             ProviderKind::OpenAICompatible,
+            ProviderKind::Magpie,
             ProviderKind::MiniMax,
             ProviderKind::Moonshot,
             ProviderKind::ZAI,
@@ -1518,12 +1511,12 @@ impl AgentPanel {
             return Vec::new();
         };
         let text = input.read(cx).value().to_string();
-        let trimmed = text.trim();
+        let trimmed = text.trim_start();
         if !trimmed.starts_with('/') {
             return Vec::new();
         }
         let query = &trimmed[1..].to_lowercase();
-        if query.contains(' ') {
+        if query.contains(char::is_whitespace) {
             return Vec::new();
         }
         self.skills
@@ -5785,6 +5778,54 @@ mod tests {
     }
 
     #[gpui::test]
+    fn completed_inline_skill_leaves_completion_and_can_submit(cx: &mut gpui::TestAppContext) {
+        use gpui::Focusable;
+        use std::{cell::RefCell, rc::Rc};
+        con_core::release_channel::init();
+        cx.update(gpui_component::init);
+        let submits = Rc::new(RefCell::new(Vec::new()));
+        let observed = submits.clone();
+        let (panel, cx) = cx.add_window_view(|window, cx| {
+            let mut panel = AgentPanel::new(window, cx);
+            panel.set_show_inline_input(true, cx);
+            panel.set_skills(
+                vec![crate::input_bar::SkillEntry {
+                    name: "build".into(),
+                    description: "Build".into(),
+                }],
+                cx,
+            );
+            panel
+                .inline_input_state
+                .as_ref()
+                .unwrap()
+                .read(cx)
+                .focus_handle(cx)
+                .focus(window, cx);
+            panel
+        });
+        cx.update(|_, cx| {
+            cx.subscribe(&panel, move |_, event: &super::InlineInputSubmit, _| {
+                observed.borrow_mut().push(event.text.clone());
+            })
+            .detach();
+        });
+        cx.simulate_input("/bu");
+        cx.simulate_keystrokes("enter");
+        cx.update(|_, cx| {
+            let panel = panel.read(cx);
+            assert_eq!(
+                panel.inline_input_state.as_ref().unwrap().read(cx).value(),
+                "/build "
+            );
+            assert!(panel.filtered_inline_skills(cx).is_empty());
+            assert!(submits.borrow().is_empty());
+        });
+        cx.simulate_keystrokes("enter");
+        assert_eq!(*submits.borrow(), vec!["/build ".to_string()]);
+    }
+
+    #[gpui::test]
     fn inline_composer_submits_without_inserting_or_removing_text(cx: &mut gpui::TestAppContext) {
         use gpui::Focusable;
         use std::{cell::RefCell, rc::Rc};
@@ -6062,6 +6103,19 @@ mod tests {
         let providers = AgentPanel::configured_session_providers(&config);
         assert!(providers.contains(&ProviderKind::Anthropic));
         assert!(!providers.contains(&ProviderKind::OpenAI));
+    }
+
+    #[test]
+    fn magpie_is_available_without_a_vendor_key() {
+        let mut config = AgentConfig::default();
+        config.select_provider(ProviderKind::Magpie);
+        assert!(AgentPanel::configured_session_providers(&config).contains(&ProviderKind::Magpie));
+        config.select_provider(ProviderKind::Anthropic);
+        config.providers.magpie = Some(ProviderConfig {
+            model: Some("group/coding".into()),
+            ..ProviderConfig::default()
+        });
+        assert!(AgentPanel::configured_session_providers(&config).contains(&ProviderKind::Magpie));
     }
 
     #[test]

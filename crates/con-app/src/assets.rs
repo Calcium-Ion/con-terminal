@@ -194,11 +194,16 @@ pub(crate) fn tab_identity_group(
         let card = gpui::div()
             .debug_selector(move || format!("tab-identity-item-{index}"))
             .absolute()
-            .left(step * (count - index - 1) as f32)
+            .left(step * index as f32 + gpui::px(if index == 0 { 0.0 } else { 2.0 }))
             .top((tab_identity_group_height(count, size) - card_size) * 0.5)
             .size(card_size)
-            .rounded(gpui::px((size.as_f32() * 0.22).round()))
-            .bg(material)
+            .child(tab_identity_card_material(
+                gpui::px((size.as_f32() * 0.22).round()),
+                material,
+                theme
+                    .foreground
+                    .opacity(if theme.is_dark() { 0.22 } else { 0.16 }),
+            ))
             .flex()
             .items_center()
             .justify_center()
@@ -214,6 +219,30 @@ pub(crate) fn tab_identity_group(
         );
     }
     group.into_any_element()
+}
+
+/// Fill and contour share one antialiased quad; the inset edge consumes no
+/// layout space and stays one physical pixel on every display.
+fn tab_identity_card_material(
+    radius: gpui::Pixels,
+    material: gpui::Hsla,
+    edge: gpui::Hsla,
+) -> impl gpui::IntoElement {
+    use gpui::Styled;
+    gpui::canvas(
+        |bounds, window, _| {
+            crate::terminal_geometry::snap_terminal_bounds(bounds, window.scale_factor())
+        },
+        move |_, bounds, window, _| {
+            let mut quad = gpui::fill(bounds, material);
+            quad.corner_radii = gpui::Corners::all(radius);
+            quad.border_widths = gpui::Edges::all(gpui::px(1.0 / window.scale_factor()));
+            quad.border_color = edge;
+            window.paint_quad(quad);
+        },
+    )
+    .absolute()
+    .inset_0()
 }
 
 /// Tab identities may be small bitmap objects; action/status glyphs stay SVG.
@@ -410,13 +439,13 @@ mod tests {
                     let group = cx.debug_bounds("tab-identity-group").unwrap();
                     let first = cx.debug_bounds("tab-identity-item-0").unwrap();
                     let second = cx.debug_bounds("tab-identity-item-1").unwrap();
-                    assert!(first.left() > second.left());
-                    assert!(second.right() > first.left());
+                    assert!(first.left() < second.left());
+                    assert!(first.right() > second.left());
                     assert_eq!(first.center().y, second.center().y);
                     assert_eq!(first.size.width, px(size + 2.0));
-                    assert_eq!(first.right(), group.right());
+                    assert_eq!(first.left(), group.left());
                     assert_eq!(first.bottom(), group.bottom());
-                    assert!(second.left() >= group.left());
+                    assert!(second.right() <= group.right());
                     let primary_art = cx.debug_bounds("tab-identity-art-0").unwrap();
                     let rear_art = cx.debug_bounds("tab-identity-art-1").unwrap();
                     assert_eq!(primary_art.size.width, px(size));
@@ -430,10 +459,14 @@ mod tests {
                     assert!(cx.debug_bounds("tab-identity-more").is_none());
                     if count >= 3 {
                         let third = cx.debug_bounds("tab-identity-item-2").unwrap();
-                        assert_eq!(third.left(), group.left());
+                        assert_eq!(third.right(), group.right());
                         assert_eq!(third.center().y, group.center().y);
-                        assert_eq!(first.left() - second.left(), second.left() - third.left());
+                        assert_eq!(
+                            first.right() - second.right(),
+                            second.right() - third.right()
+                        );
                     } else {
+                        assert_eq!(second.right(), group.right());
                         assert!(cx.debug_bounds("tab-identity-item-2").is_none());
                     }
                     assert!(cx.debug_bounds("tab-identity-item-3").is_none());
