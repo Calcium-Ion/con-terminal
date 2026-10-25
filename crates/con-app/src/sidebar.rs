@@ -317,6 +317,7 @@ pub struct SessionSidebar {
     mode: PanelMode,
     sessions: Vec<SessionEntry>,
     activity_layer: Option<Entity<crate::tab_activity::TabActivity>>,
+    pub(crate) notifications: crate::tab_activity::TabNotifications,
     active_session: usize,
     leading_top_pad: f32,
     /// Smooth width animation between rail (0.0) and pinned (1.0).
@@ -437,6 +438,7 @@ impl SessionSidebar {
             mode: PanelMode::Collapsed,
             sessions: Vec::new(),
             activity_layer: None,
+            notifications: Default::default(),
             active_session: 0,
             // The workspace top bar already reserves the macOS
             // traffic-light/titlebar area before the sidebar is
@@ -760,6 +762,8 @@ impl SessionSidebar {
         {
             self.rename = None;
         }
+        self.notifications
+            .retain(|id| sessions.iter().any(|session| session.id == *id));
         self.sessions = sessions;
         self.active_session = active;
         cx.notify();
@@ -856,7 +860,7 @@ impl SessionSidebar {
     }
 
     #[allow(dead_code)]
-    fn render_rail(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> Stateful<Div> {
+    fn render_rail(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Stateful<Div> {
         let theme = cx.theme();
         let session_count = self.sessions.len();
         let mode_icon = if self.tools_panel_open || (self.is_pinned() && !self.rail_only_override) {
@@ -1233,27 +1237,30 @@ impl SessionSidebar {
                     true,
                 ));
 
-            if session.needs_attention
-                && !is_active
-                && !session.status.is_some_and(|status| {
-                    matches!(
-                        status.activity,
-                        con_core::terminal_status::Activity::Error
-                            | con_core::terminal_status::Activity::NeedsInput
-                            | con_core::terminal_status::Activity::Paused
-                            | con_core::terminal_status::Activity::Done
-                    )
-                })
-            {
-                pill = pill.child(
-                    div()
-                        .absolute()
-                        .top(px(3.0))
-                        .right(px(3.0))
-                        .size(px(6.0))
-                        .rounded_full()
-                        .bg(theme.primary),
-                );
+            if let Some(dot) = self.notifications.dot(
+                session.id,
+                crate::tab_activity::notification_label(
+                    session.status,
+                    session.needs_attention,
+                    is_active,
+                ),
+                theme.primary,
+                gpui::size(px(RAIL_ICON_SIZE), px(RAIL_ICON_SIZE)),
+                gpui::size(
+                    crate::assets::tab_identity_group_width(
+                        session.identity_icons().len(),
+                        ui_icon_px(theme, 18.0).min(px(18.0)),
+                        true,
+                    ),
+                    crate::assets::tab_identity_group_height(
+                        session.identity_icons().len(),
+                        ui_icon_px(theme, 18.0).min(px(18.0)),
+                    ),
+                ),
+                window,
+                cx,
+            ) {
+                pill = pill.child(dot);
             }
             if show_indicator_above {
                 pill = pill.child(rail_drop_indicator(theme, true));
@@ -1771,7 +1778,7 @@ impl SessionSidebar {
         drop_slot: Option<usize>,
         total: usize,
         drag_in_sidebar: bool,
-        _window: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
         layout: NavigationLayout,
     ) -> AnyElement {
@@ -1942,27 +1949,27 @@ impl SessionSidebar {
                 theme,
                 layout.compact,
             ));
-        if session.needs_attention
-            && !is_active
-            && !session.status.is_some_and(|status| {
-                matches!(
-                    status.activity,
-                    con_core::terminal_status::Activity::Error
-                        | con_core::terminal_status::Activity::NeedsInput
-                        | con_core::terminal_status::Activity::Paused
-                        | con_core::terminal_status::Activity::Done
-                )
-            })
-        {
-            icon_stack = icon_stack.child(
-                div()
-                    .absolute()
-                    .top(px((32.0 - layout.icon_size) * 0.5 - 2.0))
-                    .right(px((32.0 - layout.icon_size) * 0.5 - 2.0))
-                    .size(px(6.0))
-                    .rounded_full()
-                    .bg(theme.primary),
-            );
+        if let Some(dot) = self.notifications.dot(
+            session.id,
+            crate::tab_activity::notification_label(
+                session.status,
+                session.needs_attention,
+                is_active,
+            ),
+            theme.primary,
+            gpui::size(identity_width, px(32.0)),
+            gpui::size(
+                crate::assets::tab_identity_group_width(
+                    session.identity_icons().len(),
+                    icon_size,
+                    layout.compact,
+                ),
+                crate::assets::tab_identity_group_height(session.identity_icons().len(), icon_size),
+            ),
+            window,
+            cx,
+        ) {
+            icon_stack = icon_stack.child(dot);
         }
 
         let row = div()
@@ -3186,6 +3193,60 @@ mod tests {
                 );
                 closed.set(None);
             }
+        }
+    }
+
+    #[gpui::test]
+    fn completion_uses_one_notification_and_keeps_identity_in_rail_and_panel(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        use con_core::terminal_status::{Activity, Evidence, Status};
+        cx.update(gpui_component::init);
+        let done = Status {
+            surface_id: 1,
+            activity: Activity::Done,
+            evidence: Evidence::ProgramStatus,
+            percent: None,
+        };
+        let (view, cx) = cx.add_window_view(|_, cx| {
+            let mut sidebar = SessionSidebar::new(cx);
+            sidebar.sessions = vec![session(Some(done), None)];
+            sidebar
+        });
+        for expanded in [false, true] {
+            view.update(cx, |sidebar, cx| {
+                sidebar.set_pinned(expanded, cx);
+                sidebar.width_motion =
+                    crate::motion::SidebarMotion::new(if expanded { 1.0 } else { 0.0 });
+                sidebar.sessions[0].status = Some(done);
+                sidebar.sessions[0].needs_attention = true;
+                cx.notify();
+            });
+            let identity = cx.debug_bounds("tab-status-brand").unwrap();
+            let notification = cx.debug_bounds("tab-notification-dot").unwrap();
+            assert!((notification.center().x - (identity.right() - px(1.0))).abs() <= px(0.5));
+            assert!((notification.center().y - (identity.top() + px(1.0))).abs() <= px(0.5));
+            assert!(cx.debug_bounds("tab-status-glyph").is_none());
+            view.update(cx, |sidebar, cx| {
+                sidebar.sessions[0].status = Some(Status {
+                    activity: Activity::Idle,
+                    ..done
+                });
+                sidebar.sessions[0].needs_attention = false;
+                cx.notify();
+            });
+            assert!(cx.debug_bounds("tab-notification-dot").is_none());
+            assert_eq!(cx.debug_bounds("tab-status-brand").unwrap(), identity);
+            view.update(cx, |sidebar, cx| {
+                sidebar.sessions[0].status = Some(Status {
+                    activity: Activity::Error,
+                    ..done
+                });
+                sidebar.sessions[0].needs_attention = true;
+                cx.notify();
+            });
+            assert!(cx.debug_bounds("tab-notification-dot").is_none());
+            assert!(cx.debug_bounds("tab-status-glyph").is_some());
         }
     }
 

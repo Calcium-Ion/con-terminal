@@ -512,14 +512,12 @@ fn tab_name_label() -> gpui::Div {
         .h(px(TAB_SURFACE_HEIGHT))
 }
 
-fn tab_attention_mark(color: Hsla) -> gpui::Div {
-    div()
+#[cfg(test)]
+fn tab_attention_mark(color: Hsla) -> gpui::Stateful<gpui::Div> {
+    crate::tab_activity::notification_dot(color)
         .absolute()
         .left(px(TAB_IDENTITY_INSET + TAB_CLOSE_SIZE - 2.0))
         .top(px(TAB_SELECTION_INSET))
-        .size(px(5.0))
-        .rounded_full()
-        .bg(color)
 }
 
 fn tab_close_slot() -> gpui::Div {
@@ -2090,7 +2088,6 @@ impl ConWorkspace {
                 let index = render_indices[render_pos];
                 let tab = &self.tabs[index];
                 let is_active = index == self.active_tab;
-                let needs_attention = tab.needs_attention && !is_active;
                 let session_id = tab.summary_id;
                 for exit in &self.tab_slot_motion.departing {
                     if self.tab_slot_motion.before(exit) == Some(session_id) {
@@ -2105,6 +2102,11 @@ impl ConWorkspace {
                     .get(&session_id)
                     .copied()
                     .flatten();
+                let notification = crate::tab_activity::notification_label(
+                    terminal_status,
+                    tab.needs_attention,
+                    is_active,
+                );
                 let is_dragged_source = is_dragged_tab_source(dragged_source_id, session_id);
                 // Sidebar and strip consume the same retained names and icons.
                 // Paint-only ticks must not query terminal/runtime metadata.
@@ -2391,8 +2393,34 @@ impl ConWorkspace {
 
                 let mut name_label = tab_name_label();
 
-                if needs_attention {
-                    tab_content = tab_content.child(tab_attention_mark(theme.primary));
+                if let Some(dot) = self.sidebar.read(cx).notifications.dot(
+                    session_id,
+                    notification,
+                    theme.primary,
+                    gpui::size(identity_width, px(TAB_SURFACE_HEIGHT)),
+                    gpui::size(
+                        crate::assets::tab_identity_group_width(
+                            identity_icons.len(),
+                            tab_identity_icon_size(theme),
+                            false,
+                        ),
+                        crate::assets::tab_identity_group_height(
+                            identity_icons.len(),
+                            tab_identity_icon_size(theme),
+                        ),
+                    ),
+                    window,
+                    cx,
+                ) {
+                    tab_content = tab_content.child(
+                        div()
+                            .absolute()
+                            .left(px(TAB_IDENTITY_INSET))
+                            .top_0()
+                            .w(identity_width)
+                            .h_full()
+                            .child(dot),
+                    );
                 }
 
                 tab_content =

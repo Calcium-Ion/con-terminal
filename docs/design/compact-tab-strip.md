@@ -165,6 +165,22 @@ separate, and test hover followed by a click, not just the button in isolation.
 The shared tray fills the tab region, not the window's action buttons.
 No nested name capsules, divider rules, borders, or shadows are added.
 
+## Completion and notifications
+
+An application's identity remains visible after its TUI reports completion.
+Completion uses the same five-point, primary-colored notification dot as unread
+activity, never a replacement checkmark. Horizontal tabs, the compact rail and
+expanded vertical rows share this rule and reserve the mark beside the identity;
+stacked identities retain all their cards. Hover close controls remain separate.
+The dot exposes a `Completed` or `Unread activity` accessible label.
+
+Completion follows the owning terminal surface's existing acknowledgement:
+switching tabs or focusing the window does not acknowledge it; input delivered
+to that surface does. Completion can therefore remain marked on the active tab.
+Ordinary unread activity remains an inactive-tab signal. Error, needs-input and
+paused states retain their distinct indicators and suppress a redundant unread
+dot. Existing busy/progress presentation and status aggregation are unchanged.
+
 ## Dragging
 
 The floating horizontal-tab preview uses the measured source surface width,
@@ -204,3 +220,14 @@ Inspect dark and light themes, assigned tab colors, hover and selected states,
 long titles, increased UI font size, narrow windows, and drag placeholders.
 Exercise click and keyboard activation, close, rename, and reorder. Native
 macOS verification does not substitute for Windows/Linux visual acceptance.
+
+Notification motion is shared by stable tab ID across horizontal and vertical
+layouts. A 5pt primary-color dot is anchored to the actual identity group's
+upper-right edge, including stacks; it does not use the row or selection-pill
+corner. Entry takes 180ms with the existing decelerating motion curve, fading
+in with a restrained 80–100% size change; exit takes 120ms. Acknowledgement
+removes the accessible notification immediately while its visual fill exits.
+Interrupted transitions continue from their current value. Repaints, reorders
+and orientation changes do not restart the transition. Reduce Motion applies
+the target immediately, and settled dots request no animation frames. Animate
+the dot's own fill rather than ancestor opacity on cached application artwork.

@@ -2,15 +2,16 @@
 
 use std::{
     cell::{Cell, RefCell},
+    collections::HashMap,
     rc::Rc,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use con_core::terminal_status::{Activity, Status};
 use gpui::{
-    Animation, AnimationExt, AnyElement, AppContext, Bounds, ContentMask, Context, Hsla,
-    InteractiveElement, IntoElement, ParentElement, PathBuilder, Pixels, Render, Styled, Window,
-    canvas, div, point, px, svg,
+    Animation, AnimationExt, AnyElement, App, AppContext, Bounds, ContentMask, Context, Hsla,
+    InteractiveElement, IntoElement, ParentElement, PathBuilder, Pixels, Render, Size,
+    StatefulInteractiveElement, Styled, Window, canvas, div, point, px, svg,
 };
 use gpui_component::ActiveTheme;
 
@@ -23,7 +24,6 @@ enum ActivityVisual {
     NeedsInput,
     Error,
     Paused,
-    Done,
 }
 
 impl ActivityVisual {
@@ -34,7 +34,7 @@ impl ActivityVisual {
             Self::BusyBars => (0.0, 0.0),
             Self::Busy => (phase * TAU, FRAC_PI_2),
             Self::Progress(percent) => (-FRAC_PI_2, TAU * f32::from(percent) / 100.0),
-            Self::NeedsInput | Self::Error | Self::Paused | Self::Done | Self::None => (0.0, 0.0),
+            Self::NeedsInput | Self::Error | Self::Paused | Self::None => (0.0, 0.0),
         }
     }
 
@@ -43,7 +43,6 @@ impl ActivityVisual {
             Self::NeedsInput => Some("phosphor/warning.svg"),
             Self::Error => Some("phosphor/x.svg"),
             Self::Paused => Some("phosphor/pause.svg"),
-            Self::Done => Some("phosphor/check.svg"),
             Self::None | Self::Busy | Self::BusyBars | Self::Progress(_) => None,
         }
     }
@@ -57,9 +56,111 @@ impl From<Status> for ActivityVisual {
             (Activity::NeedsInput, _) => Self::NeedsInput,
             (Activity::Error, _) => Self::Error,
             (Activity::Paused, _) => Self::Paused,
-            (Activity::Done, _) => Self::Done,
+            (Activity::Done, _) => Self::None,
             (Activity::Unknown | Activity::Idle, _) => Self::None,
         }
+    }
+}
+
+/// Completion is an unread signal, never an application identity. Keep its
+/// protocol acknowledgement on the owning surface; selecting a tab is not input.
+pub(crate) fn notification_label(
+    status: Option<Status>,
+    unread: bool,
+    active: bool,
+) -> Option<&'static str> {
+    match status.map(|status| status.activity) {
+        Some(Activity::Done) => Some("Completed"),
+        Some(Activity::Error | Activity::NeedsInput | Activity::Paused) => None,
+        _ if unread && !active => Some("Unread activity"),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn notification_dot(color: Hsla) -> gpui::Stateful<gpui::Div> {
+    div()
+        .id("tab-notification-dot")
+        .debug_selector(|| "tab-notification-dot".into())
+        .role(gpui::Role::Label)
+        .aria_label("Unread activity")
+        .size(px(5.0))
+        .rounded_full()
+        .bg(color)
+}
+
+/// Shared across orientations and keyed by tab identity, never row position.
+#[derive(Default)]
+pub(crate) struct TabNotifications(RefCell<HashMap<u64, NotificationMotion>>);
+
+struct NotificationMotion {
+    visible: bool,
+    value: crate::motion::MotionValue,
+}
+
+impl NotificationMotion {
+    fn sample(&mut self, visible: bool, now: Instant, reduced: bool, frame: impl FnOnce()) -> f32 {
+        if self.visible != visible {
+            self.visible = visible;
+            self.value.set_target_at(
+                if visible { 1.0 } else { 0.0 },
+                Duration::from_millis(if visible { 180 } else { 120 }),
+                now,
+            );
+        }
+        self.value.update_at(now, reduced, frame)
+    }
+}
+
+impl TabNotifications {
+    pub(crate) fn retain(&self, keep: impl Fn(&u64) -> bool) {
+        self.0.borrow_mut().retain(|id, _| keep(id));
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn dot(
+        &self,
+        id: u64,
+        label: Option<&'static str>,
+        color: Hsla,
+        slot: Size<Pixels>,
+        group: Size<Pixels>,
+        window: &mut Window,
+        cx: &App,
+    ) -> Option<gpui::Stateful<gpui::Div>> {
+        let mut motions = self.0.borrow_mut();
+        // An absent tab needs no allocation and no animation callback.
+        if label.is_none() && !motions.contains_key(&id) {
+            return None;
+        }
+        let motion = motions.entry(id).or_insert_with(|| NotificationMotion {
+            visible: false,
+            value: crate::motion::MotionValue::new(0.0),
+        });
+        let progress = motion.sample(label.is_some(), Instant::now(), cx.reduce_motion(), || {
+            window.request_animation_frame();
+        });
+        if label.is_none() && progress == 0.0 {
+            return None;
+        }
+        // Animate the fill itself, not inherited opacity on cached brand artwork.
+        // The fixed 5pt footprint prevents layout movement during entry and exit.
+        let diameter = px(5.0 * (0.8 + 0.2 * progress));
+        let mut dot = div()
+            .id("tab-notification-dot")
+            .absolute()
+            .left((slot.width + group.width) * 0.5 - px(1.0) - diameter * 0.5)
+            .top((slot.height - group.height) * 0.5 + px(1.0) - diameter * 0.5)
+            .size(diameter)
+            .rounded_full()
+            .bg(color.opacity(progress));
+        if let Some(label) = label {
+            dot = dot
+                .debug_selector(|| "tab-notification-dot".into())
+                .role(gpui::Role::Label)
+                .aria_label(label);
+        }
+        Some(dot)
     }
 }
 
@@ -188,7 +289,6 @@ impl TabActivity {
             let activity_color = match visual {
                 ActivityVisual::NeedsInput | ActivityVisual::Paused => theme.warning,
                 ActivityVisual::Error => theme.danger,
-                ActivityVisual::Done => theme.foreground,
                 ActivityVisual::Progress(_) | ActivityVisual::Busy | ActivityVisual::BusyBars => {
                     theme.foreground
                 }
@@ -439,6 +539,176 @@ mod tests {
     use con_core::terminal_status::Evidence;
 
     #[test]
+    fn notification_state_follows_identity_and_releases_closed_tabs() {
+        let notifications = super::TabNotifications::default();
+        for id in [17, 42] {
+            notifications.0.borrow_mut().insert(
+                id,
+                super::NotificationMotion {
+                    visible: true,
+                    value: crate::motion::MotionValue::new(1.0),
+                },
+            );
+        }
+        // Reordering preserves the same retained transition; removing a tab
+        // releases its state instead of transferring it to the next row.
+        notifications.retain(|id| [42, 17].contains(id));
+        assert_eq!(notifications.0.borrow().len(), 2);
+        notifications.retain(|id| *id == 42);
+        assert!(!notifications.0.borrow().contains_key(&17));
+        assert_eq!(notifications.0.borrow()[&42].value.current(), 1.0);
+    }
+
+    #[test]
+    fn notification_motion_is_finite_reversible_and_does_not_restart() {
+        let start = std::time::Instant::now();
+        let mut motion = super::NotificationMotion {
+            visible: false,
+            value: crate::motion::MotionValue::new(0.0),
+        };
+        let frames = std::cell::Cell::new(0);
+        let frame = || frames.set(frames.get() + 1);
+        assert_eq!(motion.sample(true, start, false, frame), 0.0);
+        let middle = start + std::time::Duration::from_millis(60);
+        let before = motion.sample(true, middle, false, frame);
+        assert!(before > 0.0 && before < 1.0);
+        assert_eq!(motion.sample(false, middle, false, frame), before);
+        assert!(
+            motion.sample(
+                false,
+                middle + std::time::Duration::from_millis(30),
+                false,
+                frame
+            ) < before
+        );
+        assert_eq!(
+            motion.sample(
+                false,
+                middle + std::time::Duration::from_millis(120),
+                false,
+                frame
+            ),
+            0.0
+        );
+        let settled_frames = frames.get();
+        assert_eq!(
+            motion.sample(
+                false,
+                middle + std::time::Duration::from_secs(1),
+                false,
+                frame
+            ),
+            0.0
+        );
+        assert_eq!(frames.get(), settled_frames);
+        assert_eq!(
+            motion.sample(
+                true,
+                middle + std::time::Duration::from_secs(2),
+                true,
+                frame
+            ),
+            1.0
+        );
+        assert_eq!(frames.get(), settled_frames);
+        assert_eq!(
+            motion.sample(
+                false,
+                middle + std::time::Duration::from_secs(3),
+                true,
+                frame
+            ),
+            0.0
+        );
+        assert_eq!(frames.get(), settled_frames);
+    }
+
+    #[test]
+    fn completion_and_unread_share_a_signal_without_hiding_urgent_states() {
+        for active in [false, true] {
+            for unread in [false, true] {
+                assert_eq!(
+                    notification_label(Some(status(Activity::Done, None)), unread, active),
+                    Some("Completed")
+                );
+                for activity in [Activity::NeedsInput, Activity::Error, Activity::Paused] {
+                    assert_eq!(
+                        notification_label(Some(status(activity, None)), unread, active),
+                        None
+                    );
+                }
+            }
+        }
+        for activity in [Activity::Unknown, Activity::Idle, Activity::Busy] {
+            assert_eq!(
+                notification_label(Some(status(activity, None)), true, false),
+                Some("Unread activity")
+            );
+            assert_eq!(
+                notification_label(Some(status(activity, None)), true, true),
+                None
+            );
+            assert_eq!(
+                notification_label(Some(status(activity, None)), false, false),
+                None
+            );
+        }
+        assert_eq!(
+            notification_label(None, true, false),
+            Some("Unread activity")
+        );
+        assert_eq!(notification_label(None, true, true), None);
+    }
+
+    #[gpui::test]
+    fn completion_retains_the_whole_identity_stack_in_both_densities(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        struct Fixture {
+            activity: Activity,
+            compact: bool,
+        }
+        impl Render for Fixture {
+            fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+                let theme = cx.theme();
+                div().child(TabActivity::default().icon_group(
+                    &[
+                        "phosphor/terminal.svg",
+                        "phosphor/code.svg",
+                        "phosphor/book-open.svg",
+                    ],
+                    px(18.0),
+                    theme.foreground,
+                    Some(status(self.activity, None)),
+                    theme,
+                    self.compact,
+                ))
+            }
+        }
+        cx.update(gpui_component::init);
+        let (view, cx) = cx.add_window_view(|_, _| Fixture {
+            activity: Activity::Idle,
+            compact: false,
+        });
+        for compact in [false, true] {
+            view.update(cx, |view, cx| {
+                view.compact = compact;
+                view.activity = Activity::Idle;
+                cx.notify();
+            });
+            let idle = cx.debug_bounds("tab-status-brand").unwrap();
+            let slot = cx.debug_bounds("tab-status-slot").unwrap();
+            view.update(cx, |view, cx| {
+                view.activity = Activity::Done;
+                cx.notify();
+            });
+            assert_eq!(cx.debug_bounds("tab-status-brand").unwrap(), idle);
+            assert_eq!(cx.debug_bounds("tab-status-slot").unwrap(), slot);
+            assert!(cx.debug_bounds("tab-status-glyph").is_none());
+        }
+    }
+
+    #[test]
     fn busy_bars_are_periodic_staggered_and_static_with_reduced_motion() {
         for index in 0..3 {
             for phase in [0.0, 0.2, 0.5, 0.9] {
@@ -603,7 +873,7 @@ mod tests {
             (-FRAC_PI_2, TAU)
         );
         assert_eq!(
-            ActivityVisual::Done.arc(0.8, false),
+            ActivityVisual::None.arc(0.8, false),
             ActivityVisual::Paused.arc(0.8, false)
         );
         assert_eq!(ActivityVisual::Paused.arc(0.8, false), (0.0, 0.0));
@@ -796,7 +1066,7 @@ mod tests {
         );
         assert_eq!(
             ActivityVisual::from(status(Activity::Done, None)),
-            ActivityVisual::Done
+            ActivityVisual::None
         );
     }
 }
