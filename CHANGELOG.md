@@ -4,6 +4,19 @@ All notable changes to con are documented here.
 
 con is still pre-release, so entries may group related beta work while the product shape is stabilizing.
 
+## `v0.1.0-beta.157`
+
+### Fixed
+
+**Tabs**
+
+- Completed TUIs keep their application icons and multi-pane icon stacks. A
+  consistent notification dot marks finished work across horizontal, vertical
+  and compact tabs, with gentle appearance and dismissal transitions that
+  respect Reduce Motion. Switching tabs or layouts preserves the completion
+  hint until input is sent to its terminal.
+  _(PR [#520](https://github.com/nowledge-co/con-terminal/pull/520) by [@wey-gu](https://github.com/wey-gu))_
+
 ## `v0.1.0-beta.156` - 2026-10-24
 
 ### Fixed
