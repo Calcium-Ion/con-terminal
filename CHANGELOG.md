@@ -4,6 +4,28 @@ All notable changes to con are documented here.
 
 con is still pre-release, so entries may group related beta work while the product shape is stabilizing.
 
+## `v0.1.0-beta.159`
+
+### Changed
+
+**Agent panel**
+
+- Refine transcript spacing, prose typography and activity alignment. Expanded
+  reasoning and tool details use quieter hover feedback, and message actions
+  remain reachable when moving the pointer from a bubble to its toolbar.
+  _(PR [#524](https://github.com/nowledge-co/con-terminal/pull/524) by [@wey-gu](https://github.com/wey-gu))_
+- Replace the Latest control with a keyboard-accessible button that returns to
+  the newest message and resumes following output. Remove duplicate progress
+  feedback while the current activity already shows the agent's work.
+  _(PR [#524](https://github.com/nowledge-co/con-terminal/pull/524) by [@wey-gu](https://github.com/wey-gu))_
+
+**Application**
+
+- Use lowercase con throughout application copy. About now links to
+  con.nowledge.co and GitHub, and credits the con community alongside the
+  existing company copyright.
+  _(PR [#524](https://github.com/nowledge-co/con-terminal/pull/524) by [@wey-gu](https://github.com/wey-gu))_
+
 ## `v0.1.0-beta.158` - 2026-10-26
 
 ### Fixed
