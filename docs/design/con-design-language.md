@@ -2,6 +2,9 @@
 
 ## Purpose
 
+Write the product name as `con` in user-facing labels and prose. Preserve
+third-party names, existing theme identifiers, file paths and code symbols.
+
 This document defines the design principles that should govern every prototype and implementation decision for **con**.
 
 It is the shortest version of the brief: what the product should feel like, what visual habits it should follow, and what it should avoid.

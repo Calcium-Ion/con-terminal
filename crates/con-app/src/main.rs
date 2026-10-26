@@ -939,7 +939,7 @@ fn workspace_path_error_session(path: &std::path::Path, err: &anyhow::Error) -> 
     let mut session =
         fresh_window_session_with_history_for_cwd(fallback_cwd_for_workspace_path(path));
     let screen_text = vec![
-        "Con could not open the requested workspace profile.".to_string(),
+        "con could not open the requested workspace profile.".to_string(),
         format!("Path: {}", path.display()),
         format!("Reason: {err}"),
         "Opened a fresh shell instead. Fix the profile and run con <path> again.".to_string(),
@@ -1373,12 +1373,13 @@ impl Render for AboutView {
         let theme = cx.theme();
         let repo_url = "https://github.com/nowledge-co/con-terminal";
         let detail_surface = theme.secondary_active.opacity(0.34);
-        let quiet_text = theme.foreground.opacity(0.64);
-        let muted_text = theme.foreground.opacity(0.48);
+        let quiet_text = theme.muted_foreground;
+        let muted_text = theme.muted_foreground;
 
         div()
             .size_full()
             .bg(theme.background)
+            .font_family(theme.font_family.clone())
             .px(px(28.0))
             .py(px(28.0))
             .child(
@@ -1431,19 +1432,34 @@ impl Render for AboutView {
                             .child(format!("{} • {}", self.version, self.version_detail)),
                     )
                     .child(
-                        div().flex().flex_col().items_center().gap(px(6.0)).child(
-                            Link::new("about-repo")
-                                .href(repo_url)
-                                .text_size(px(12.5))
-                                .font_family(theme.mono_font_family.clone())
-                                .child(repo_url),
-                        ),
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(16.0))
+                            .child(
+                                Link::new("about-website")
+                                    .href("https://con.nowledge.co")
+                                    .text_size(px(12.5))
+                                    .child("con.nowledge.co"),
+                            )
+                            .child(
+                                Link::new("about-repo")
+                                    .href(repo_url)
+                                    .text_size(px(12.5))
+                                    .child("GitHub"),
+                            ),
                     )
                     .child(
                         div()
-                            .text_size(px(12.0))
+                            .flex()
+                            .flex_col()
+                            .items_center()
+                            .gap(px(3.0))
+                            .text_align(TextAlign::Center)
+                            .text_size(px(11.5))
                             .text_color(muted_text)
-                            .child("Copyright © 2026 Nowledge Labs, Inc."),
+                            .child("Copyright © 2026 Nowledge Labs, Inc.")
+                            .child("Built with the con community."),
                     ),
             )
     }
@@ -1851,7 +1867,7 @@ pub(crate) fn fixed_app_keybinding_shortcuts() -> Vec<(&'static str, &'static st
     let shortcuts = {
         let mut shortcuts = shortcuts;
         shortcuts.extend([
-            ("Hide Con", "cmd-h"),
+            ("Hide con", "cmd-h"),
             ("Hide Other Apps", "cmd-alt-h"),
             ("Show All Apps", "cmd-alt-shift-h"),
             ("Next Window", "cmd-`"),
@@ -2724,7 +2740,7 @@ fn main() {
                 Ok(_) => match config_recovery::restart() {
                     Ok(()) => cx.quit(),
                     Err(error) => config_recovery::open(
-                        format!("Settings are valid, but Con could not restart: {error}"),
+                        format!("Settings are valid, but con could not restart: {error}"),
                         true,
                         cx,
                     ),

@@ -279,10 +279,10 @@ impl SettingsPanel {
             .p(px(16.0)).w_full().min_w_0().gap_3()
             .child(div().flex().flex_col().gap_2()
                 .child(div().font_weight(FontWeight::MEDIUM).child("Import from Ghostty"))
-                .child(div().text_sm().text_color(muted).child("Replace terminal settings. Keep Con’s AI, app shortcuts, and other Con-specific settings. Ghostty files stay unchanged.")));
+                .child(div().text_sm().text_color(muted).child("Replace terminal settings. Keep con’s AI, app shortcuts, and other con-specific settings. Ghostty files stay unchanged.")));
 
         if restart {
-            content = content.child(div().text_color(warning).child("Imported. Restart Con to use the new configuration. Existing terminal sessions have not changed."));
+            content = content.child(div().text_color(warning).child("Imported. Restart con to use the new configuration. Existing terminal sessions have not changed."));
             if let Some(backup) = backup {
                 content = content
                     .child(
@@ -299,9 +299,9 @@ impl SettingsPanel {
                             .on_click(move |_, _, cx| cx.reveal_path(&backup)),
                     );
             }
-            content = content.child(div().flex().child(Button::new("configuration-restart").primary().small().label("Restart Con…")
+            content = content.child(div().flex().child(Button::new("configuration-restart").primary().small().label("Restart con…")
                 .on_click(|_, window, cx| {
-                    let answer = window.prompt(PromptLevel::Warning, "Restart Con?", Some("Running terminal commands and agent tasks will stop. Save any unsaved editor files before restarting."), &["Cancel", "Restart Con"], cx);
+                    let answer = window.prompt(PromptLevel::Warning, "Restart con?", Some("Running terminal commands and agent tasks will stop. Save any unsaved editor files before restarting."), &["Cancel", "Restart con"], cx);
                     cx.spawn(async move |cx| {
                         if answer.await.ok() == Some(1) {
                             cx.update(|cx| cx.restart());
@@ -398,7 +398,7 @@ impl SettingsPanel {
                     .any(|entry| entry.key == "config-file");
                 content = content.child(div().font_weight(FontWeight::MEDIUM).child("Ready to import"))
                     .child(div().text_sm().text_color(muted).child(source.display().to_string()))
-                    .child(div().text_sm().child("Con will back up the current file and replace its terminal settings. Restart to apply. Shell commands configured by this file may run in new terminal sessions."));
+                    .child(div().text_sm().child("con will back up the current file and replace its terminal settings. Restart to apply. Shell commands configured by this file may run in new terminal sessions."));
                 if includes {
                     content = content.child(div().text_sm().text_color(warning).child("This configuration includes other files. Edit native terminal settings in those copied files; Settings cannot override them."));
                 }

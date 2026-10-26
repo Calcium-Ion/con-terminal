@@ -585,7 +585,7 @@ impl ConWorkspace {
         cx: &mut Context<Self>,
     ) {
         let title = if event.0.title.is_empty() {
-            "Con".to_owned()
+            "con".to_owned()
         } else {
             event.0.title.clone()
         };

@@ -46,7 +46,7 @@ impl ConfigRecovery {
 
     fn copy_details(&mut self, cx: &mut Context<Self>) {
         cx.write_to_clipboard(ClipboardItem::new_string(format!(
-            "Con could not load {}\n{}",
+            "con could not load {}\n{}",
             self.path.display(),
             self.error
         )));
@@ -68,7 +68,7 @@ impl ConfigRecovery {
 
         if self.restart_required {
             if let Err(error) = restart() {
-                self.status = Some(format!("Could not restart Con: {error}"));
+                self.status = Some(format!("Could not restart con: {error}"));
                 cx.notify();
                 return;
             }
@@ -101,7 +101,7 @@ impl Render for ConfigRecovery {
                     .on_click(|_, _, _| crate::updater::check_for_updates())
             } else {
                 Button::new("recovery-get-latest")
-                    .label("Get Latest Con")
+                    .label("Get Latest con")
                     .small()
                     .ghost()
                     .on_click(|_, _, cx| {
@@ -132,7 +132,7 @@ impl Render for ConfigRecovery {
                             .text_size(px(21.0))
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(foreground)
-                            .child("Con couldn't load its settings"),
+                            .child("con couldn't load its settings"),
                     ),
             )
             .child(
@@ -140,7 +140,7 @@ impl Render for ConfigRecovery {
                     .text_size(px(13.0))
                     .line_height(relative(1.4))
                     .text_color(muted)
-                    .child("Your settings are unchanged. Correct the file, then try again. If you recently switched to an older Con, updating may resolve the error."),
+                    .child("Your settings are unchanged. Correct the file, then try again. If you recently switched to an older con, updating may resolve the error."),
             )
             .child(
                 div()
@@ -214,7 +214,7 @@ impl Render for ConfigRecovery {
                     .child(update_button)
                     .child(
                         Button::new("recovery-quit")
-                            .label("Quit Con")
+                            .label("Quit con")
                             .small()
                             .ghost()
                             .on_click(|_, _, cx| cx.quit()),
@@ -227,7 +227,7 @@ pub(crate) fn open(error: String, restart_required: bool, cx: &mut App) {
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::centered(size(px(620.0), px(430.0)), cx)),
         titlebar: Some(TitlebarOptions {
-            title: Some("Con Settings".into()),
+            title: Some("con Settings".into()),
             appears_transparent: true,
             ..Default::default()
         }),
