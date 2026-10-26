@@ -496,7 +496,7 @@ impl ConWorkspace {
             files: true,
             directories: true,
             multiple: false,
-            prompt: Some("Choose a project folder or Con workspace layout".into()),
+            prompt: Some("Choose a project folder or con workspace layout".into()),
         });
 
         cx.spawn_in(window, async move |this, window| {

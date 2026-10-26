@@ -847,7 +847,7 @@ impl SettingsPanel {
                             let _ = this.update(cx, |panel, cx| {
                                 let state = panel.oauth_state_mut(&provider);
                                 state.prompt = Some(prompt);
-                                state.status_message = Some("Finish sign-in in your browser. Con will continue automatically.".to_string());
+                                state.status_message = Some("Finish sign-in in your browser. con will continue automatically.".to_string());
                                 state.error_message = None;
                                 cx.open_url(&verification_uri);
                                 cx.notify();
@@ -864,7 +864,7 @@ impl SettingsPanel {
                                     Ok(Ok(())) => {
                                         state.connected = true;
                                         state.prompt = None;
-                                        state.status_message = Some("Authorized and stored in Con’s auth cache.".to_string());
+                                        state.status_message = Some("Authorized and stored in con’s auth cache.".to_string());
                                         state.error_message = None;
                                         if provider == ProviderKind::ChatGPT && panel.selected_provider == provider {
                                             panel.fetch_selected_provider_models(window, cx);
@@ -2937,7 +2937,7 @@ impl SettingsPanel {
     fn save(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         if ConfigurationImportStatus::blocks_settings(cx) {
             self.save_error = Some(
-                "Finish the configuration import or restart Con before saving settings.".into(),
+                "Finish the configuration import or restart con before saving settings.".into(),
             );
             self.save_error_kind = Some(SettingsSaveErrorKind::Other);
             cx.notify();
@@ -3582,7 +3582,7 @@ impl SettingsPanel {
                 .child(group_label("Terminal", theme))
                 .child(card(theme, card_opacity).child(row_input_with_hint(
                     "Default Shell",
-                    "Command used by new panes after restarting Con. Leave blank for automatic detection.",
+                    "Command used by new panes after restarting con. Leave blank for automatic detection.",
                     &self.shell_input,
                     theme,
                 mobile))),
@@ -3596,7 +3596,7 @@ impl SettingsPanel {
                 .child(group_label("Continuity", theme))
                 .child(card(theme, card_opacity).child(toggle_row(
                     "Restore Terminal Text",
-                    "Keep terminal output when you reopen Con.",
+                    "Keep terminal output when you reopen con.",
                     Switch::new("restore-terminal-text-toggle")
                         .checked(self.config.appearance.restore_terminal_text)
                         .small()
@@ -3654,7 +3654,7 @@ impl SettingsPanel {
                                         .text_size(ui_px(theme, 12.0))
                                         .line_height(ui_px(theme, 18.0))
                                         .text_color(theme.muted_foreground)
-                                        .child("Con scans these folders for slash-command skills. Project paths follow the active working directory; global paths are always available."),
+                                        .child("con scans these folders for slash-command skills. Project paths follow the active working directory; global paths are always available."),
                                 ),
                         )
                         .child(row_separator(theme))
@@ -3986,7 +3986,7 @@ impl SettingsPanel {
                 .text_size(ui_px(cx.theme(), 12.0))
                 .text_color(muted)
                 .child(
-                    "Con's bundled Nerd Font and the system cascade are appended automatically.",
+                    "con's bundled Nerd Font and the system cascade are appended automatically.",
                 ),
         )
     }
@@ -4636,7 +4636,7 @@ impl SettingsPanel {
                             .text_size(ui_px(theme, 12.0))
                             .line_height(ui_px(theme, 18.0))
                             .text_color(theme.muted_foreground)
-                            .child("Shown beside replies from Con's built-in agent."),
+                            .child("Shown beside replies from con's built-in agent."),
                     )
                     .child(div().px(rems(1.0)).pt(px(10.0)).pb(px(14.0)).child(choices)),
             )
@@ -5579,7 +5579,7 @@ impl SettingsPanel {
                         .children(is_codex_local.then(|| {
                             div().text_xs().line_height(rems(1.25))
                                 .text_color(theme.muted_foreground)
-                                .child("Con starts codex app-server locally and uses Codex's own login and configuration. Install the Codex CLI and run codex login first. No API key or OAuth sign-in in Con is needed. Commands and edits still use Con tools and approvals.")
+                                .child("con starts codex app-server locally and uses Codex's own login and configuration. Install the Codex CLI and run codex login first. No API key or OAuth sign-in in con is needed. Commands and edits still use con tools and approvals.")
                         }))
                         .children((!is_codex_local).then(|| stacked_input_field(
                             Self::provider_api_key_label(&self.selected_provider),
@@ -5934,7 +5934,7 @@ impl SettingsPanel {
                                 .line_height(rems(1.125))
                                 .text_color(theme.muted_foreground)
                                 .child(
-                                    "Show Con from anywhere in macOS. Press it again while Con is frontmost to hide the app.",
+                                    "Show con from anywhere in macOS. Press it again while con is frontmost to hide the app.",
                                 ),
                         ),
                 )
@@ -6086,7 +6086,7 @@ impl SettingsPanel {
                                     .text_xs()
                                     .line_height(rems(1.125))
                                     .text_color(theme.muted_foreground)
-                                    .child("Show a dedicated floating Con window that slides down from the top of the screen."),
+                                    .child("Show a dedicated floating con window that slides down from the top of the screen."),
                             ),
                     )
                     .child(

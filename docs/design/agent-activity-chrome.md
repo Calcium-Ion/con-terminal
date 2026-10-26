@@ -14,11 +14,15 @@ There is no full-window titlebar rule, outline or opaque transition overlay.
 
 - A submitted user message immediately enters a presentation-only waiting state,
   before context gathering or the first provider event. Show the shared working
-  indicator with `Working…`; change to Thinking/Writing as events arrive. Stop,
+  indicator with `Working…`; change to Thinking/Writing as events arrive. Once
+  the current reply has a visible activity disclosure, or live tools are present,
+  omit the duplicate tail status. Keep the initial wait and trace-free writing
+  feedback. Stop,
   completion and errors end the feedback. Restored user messages remain idle.
 - Live tools, approval requests and the working indicator belong to the transcript
   tail, not a fixed footer or a second stream below the session controls. Show one
-  working indicator while busy; approval is static and does not add a spinner.
+  working indicator when the transcript has no current trace; an active trace
+  supplies its own Working summary. Approval is static and does not add a spinner.
 - Animate only this summary. Approval is a static shield; it is waiting for the
   user, not work progressing in the background. Trace rows retain their tool
   icons and running/completed states without additional spinners.
@@ -91,11 +95,23 @@ arguments retain the mono font; durations use the UI font. Body text, reasoning 
 activity share one left rail, rather than accumulating different nested indents.
 User messages use one neutral rounded fill without a decorative corner cutout.
 
-Reasoning, saved tools and live tools share a 32-point header, 10-point side
-insets, a 16-point icon column and an 8-point column gap, scaled with UI text.
+The transcript and session header share 16-point horizontal insets. User and
+assistant prose use 14-point text with a 22-point line height, scaled with UI
+text; code and tool arguments keep their monospace styles. User actions occupy
+the inter-message space on hover rather than adding an invisible toolbar row.
+
+Reasoning, saved tools and live tools share a 28-point header, a 16-point icon
+column and an 8-point column gap, scaled with UI text. Activity children sit one
+24-point column inside the summary; expanded content aligns with its label.
+The assistant identity uses the same 16-point icon and 8-point gap, with the
+same 8-point inner inset as activity headers.
 Their labels share one baseline and left rail. Expanded content begins beneath
 that label column. Resting headers have no fill; hover and keyboard focus use
-the component button's rounded feedback. Do not turn one tool header into a
+the component button's rounded feedback. Transcript disclosures use a quiet
+foreground-derived hover fill, with 8-point breathing room around the content
+rather than a tightly fitted pill. Keep the whole hover surface inside the transcript clip; negative outer
+margins can cut off its leading rounded corner. Brief reasoning notes retain their small activity icon
+so they read as part of the trace rather than an orphaned paragraph. Do not turn one tool header into a
 filled tile while adjacent reasoning remains a small text button.
 Code fences have one rounded surface, a quiet language label and copy action;
 the scrollable code body does not have a second fill or outline. Keep the existing
@@ -123,3 +139,9 @@ behavior still respects manual scrolling and exposes the existing latest action.
 Layout tests cover a 280px panel, a wide panel, enlarged UI text, and CJK/long
 tool details. Native visual acceptance should cover thinking, writing, tool
 execution, approval, and idle in light and dark themes.
+
+The jump-to-latest action is a keyboard-accessible component button anchored
+inside the transcript gutter above the composer. Keep its arrow and label in
+one compact row with balanced padding and an opaque neutral control fill so
+content behind it does not reduce contrast. Activating it resumes tail following;
+it disappears at the latest message.

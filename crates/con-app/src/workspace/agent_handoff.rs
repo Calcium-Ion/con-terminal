@@ -337,7 +337,7 @@ impl ConWorkspace {
         let cli = con_cli_path()?;
         anyhow::ensure!(
             cli.is_file(),
-            "con-cli is missing beside the Con executable ({}); build it with `cargo build -p con-cli` or reinstall Con",
+            "con-cli is missing beside the con executable ({}); build it with `cargo build -p con-cli` or reinstall con",
             cli.display()
         );
         let quote = |text: &str| format!("'{}'", text.replace('\'', "'\"'\"'"));

@@ -1,7 +1,7 @@
 use crossbeam_channel::Sender;
 use gpui::prelude::FluentBuilder;
 use gpui::*;
-use gpui_component::button::{Button, ButtonVariants as _};
+use gpui_component::button::{Button, ButtonCustomVariant, ButtonVariants as _};
 use gpui_component::clipboard::Clipboard;
 use gpui_component::input::{InputEvent, Position, Textarea, TextareaState};
 use gpui_component::menu::{DropdownMenu as _, PopupMenu, PopupMenuItem};
@@ -2808,6 +2808,14 @@ fn render_result_text(content: &str, color: Hsla, theme: &gpui_component::Theme)
     div().child(StyledText::new(display.clone()).with_runs(vec![text_style.to_run(display.len())]))
 }
 
+// Keep transcript disclosure feedback below the weight of message surfaces.
+fn trace_disclosure_style(cx: &App, theme: &Theme) -> ButtonCustomVariant {
+    ButtonCustomVariant::new(cx)
+        .foreground(theme.muted_foreground)
+        .hover(theme.foreground.opacity(0.035))
+        .active(theme.foreground.opacity(0.055))
+}
+
 fn trace_step_header_surface(theme: &gpui_component::Theme) -> Hsla {
     theme.transparent
 }
@@ -3000,10 +3008,10 @@ fn humanize_provider_name(name: &str) -> String {
                     s.extend(chars);
                     s
                 }
-                None => "Con".to_string(),
+                None => "con".to_string(),
             }
         }
-        _ => "Con".to_string(),
+        _ => "con".to_string(),
     }
 }
 
@@ -3019,7 +3027,7 @@ fn split_model_identity(model: &str) -> (Option<String>, String) {
         }
     }
     if model.is_empty() {
-        (None, "Con".to_string())
+        (None, "con".to_string())
     } else {
         (None, humanize_model_name(model))
     }
@@ -3164,8 +3172,8 @@ fn activity_row_header(
     let mut row = div()
         .w_full()
         .min_w_0()
-        .h(ui_space_px(theme, 32.0))
-        .px(ui_space_px(theme, 10.0))
+        .h(ui_space_px(theme, 28.0))
+        .px(ui_space_px(theme, 8.0))
         .flex()
         .items_center()
         .gap(ui_space_px(theme, 8.0))
@@ -3186,7 +3194,7 @@ fn activity_row_header(
                 .text_size(ui_px(theme, 12.5))
                 .line_height(ui_px(theme, 18.0))
                 .font_family(theme.font_family.clone())
-                .font_weight(if role == "note" {
+                .font_weight(if role == "note" || role == "work" {
                     FontWeight::NORMAL
                 } else {
                     FontWeight::MEDIUM
@@ -3246,8 +3254,8 @@ fn render_user_message_text(
 ) -> AnyElement {
     if !content.contains('\n') {
         return div()
-            .text_size(ui_px(theme, 13.5))
-            .line_height(ui_px(theme, 21.0))
+            .text_size(ui_px(theme, 14.0))
+            .line_height(ui_px(theme, 22.0))
             .text_color(theme.foreground)
             .child(content.to_string())
             .into_any_element();
@@ -3257,8 +3265,8 @@ fn render_user_message_text(
         .flex()
         .flex_col()
         .gap(ui_space_px(theme, 4.0))
-        .text_size(ui_px(theme, 13.5))
-        .line_height(ui_px(theme, 21.0))
+        .text_size(ui_px(theme, 14.0))
+        .line_height(ui_px(theme, 22.0))
         .text_color(theme.foreground);
 
     for (line_idx, line) in content.lines().enumerate() {
@@ -3335,6 +3343,7 @@ fn render_assistant_message(
     markdown_expanded: bool,
     rendered_markdown: Option<AnyElement>,
     theme: &Theme,
+    cx: &App,
 ) -> AnyElement {
     let assistant_content_for_copy = msg.content.clone();
     let msg_model = msg.model.as_deref().unwrap_or("");
@@ -3342,7 +3351,13 @@ fn render_assistant_message(
     let msg_duration_ms = msg
         .duration_ms
         .filter(|_| msg.steps.is_empty() && !has_reasoning);
-    let mut msg_el = div().flex().flex_col().gap(ui_space_px(theme, 8.0));
+    let mut msg_el = div()
+        .debug_selector(|| "agent-assistant-message".into())
+        .w_full()
+        .min_w_0()
+        .flex()
+        .flex_col()
+        .gap(ui_space_px(theme, 8.0));
     let mut answer_el = div()
         .debug_selector(|| "agent-answer".into())
         .flex()
@@ -3353,9 +3368,10 @@ fn render_assistant_message(
         .items_center()
         .gap(ui_space_px(theme, 8.0))
         .pb(ui_space_px(theme, 2.0))
+        .pl(ui_space_px(theme, 8.0))
         .child(
             img(avatar_asset)
-                .size(ui_icon_px(theme, 22.0))
+                .size(ui_icon_px(theme, 16.0))
                 .object_fit(ObjectFit::Contain)
                 .flex_none(),
         );
@@ -3382,7 +3398,7 @@ fn render_assistant_message(
         reasoning_el = reasoning_el.child(
             Button::new(SharedString::from(format!("thinking-toggle-{msg_idx}")))
                 .debug_selector(|| "agent-reasoning-toggle".into())
-                .ghost()
+                .custom(trace_disclosure_style(cx, theme))
                 .w_full()
                 .h_auto()
                 .p_0()
@@ -3404,19 +3420,22 @@ fn render_assistant_message(
                         cx.notify();
                     });
                 })
-                .child(activity_row_header(
-                    "reasoning",
-                    Some(activity_icon(
-                        "phosphor/sparkle.svg",
-                        theme.muted_foreground,
+                .child(
+                    activity_row_header(
+                        "reasoning",
+                        Some(activity_icon(
+                            "phosphor/sparkle.svg",
+                            theme.muted_foreground,
+                            theme,
+                        )),
+                        thinking_summary,
+                        None,
+                        vec![activity_caret(!thinking_collapsed, theme)],
+                        theme.foreground,
                         theme,
-                    )),
-                    thinking_summary,
-                    None,
-                    vec![activity_caret(!thinking_collapsed, theme)],
-                    theme.foreground,
-                    theme,
-                )),
+                    )
+                    .px(ui_space_px(theme, 8.0)),
+                ),
         );
 
         if !thinking_collapsed {
@@ -3425,7 +3444,7 @@ fn render_assistant_message(
                 .w_full()
                 .mt(px(1.0))
                 .mb(px(2.0))
-                .pl(ui_space_px(theme, 34.0))
+                .pl(ui_space_px(theme, 32.0))
                 .pr(ui_space_px(theme, 10.0))
                 .py(ui_space_px(theme, 8.0))
                 .text_size(ui_px(theme, 12.0))
@@ -3445,7 +3464,7 @@ fn render_assistant_message(
             }
             reasoning_el = reasoning_el.child(thinking_el);
             reasoning_el = reasoning_el.child(
-                div().pl(ui_space_px(theme, 34.0)).child(
+                div().pl(ui_space_px(theme, 32.0)).child(
                     Clipboard::new(format!("copy-think-{msg_idx}"))
                         .value(SharedString::from(thinking.clone())),
                 ),
@@ -3456,7 +3475,7 @@ fn render_assistant_message(
     if !msg.content.is_empty() {
         let mut content_el = div()
             .text_size(ui_px(theme, 14.0))
-            .line_height(ui_px(theme, 23.0))
+            .line_height(ui_px(theme, 22.0))
             .text_color(theme.foreground);
 
         if msg.select_mode {
@@ -3496,7 +3515,7 @@ fn render_assistant_message(
                         suffix,
                         theme.font_family.clone(),
                         ui_px(theme, 14.0),
-                        ui_px(theme, 23.0),
+                        ui_px(theme, 22.0),
                         theme.foreground,
                     ),
                 ));
@@ -3584,7 +3603,7 @@ fn render_assistant_message(
                 &msg.content,
                 theme.font_family.clone(),
                 ui_px(theme, 14.0),
-                ui_px(theme, 23.0),
+                ui_px(theme, 22.0),
                 theme.foreground,
             ));
         }
@@ -3662,25 +3681,25 @@ fn render_assistant_message(
         let run_panel = panel.clone();
         let mut run_card = div()
             .debug_selector(|| "agent-run-card".into())
-            .mt(ui_space_px(theme, 6.0))
-            .py(ui_space_px(theme, 4.0))
             .rounded(ui_space_px(theme, 12.0))
             .bg(theme.transparent)
             .flex()
             .flex_col()
             .items_start()
-            .gap(ui_space_px(theme, 10.0));
+            .gap(ui_space_px(theme, 2.0));
 
         let work_summary = div()
             .debug_selector(|| "agent-run-summary".into())
             .flex_none()
             .text_size(ui_px(theme, 11.0))
+            .line_height(ui_px(theme, 18.0))
             .text_color(theme.muted_foreground)
             .child(run_status_summary(step_count, 0, 0))
             .into_any_element();
         run_card = run_card.child(
             Button::new(SharedString::from(format!("steps-toggle-{msg_idx}")))
-                .ghost()
+                .debug_selector(|| "agent-run-toggle".into())
+                .custom(trace_disclosure_style(cx, theme))
                 .max_w_full()
                 .h_auto()
                 .p_0()
@@ -3716,17 +3735,18 @@ fn render_assistant_message(
                         },
                         theme,
                     )
-                    .w_auto(),
+                    .w_auto()
+                    .px(ui_space_px(theme, 8.0)),
                 ),
         );
 
         if !collapsed {
             let mut steps_el = div()
                 .w_full()
-                .pl(ui_space_px(theme, 12.0))
+                .pl(ui_space_px(theme, 24.0))
                 .flex()
                 .flex_col()
-                .gap(ui_space_px(theme, 4.0));
+                .gap(ui_space_px(theme, 2.0));
             if has_reasoning {
                 steps_el = steps_el.child(reasoning_el);
             }
@@ -3767,7 +3787,7 @@ fn render_assistant_message(
                 }
                 let step_header = activity_row_header(
                     if has_detail { "tool" } else { "note" },
-                    has_detail.then(|| activity_icon(step.icon, icon_color, theme)),
+                    Some(activity_icon(step.icon, icon_color, theme)),
                     step_name,
                     step_detail,
                     accessories,
@@ -3783,14 +3803,14 @@ fn render_assistant_message(
                     .flex()
                     .flex_col()
                     .rounded(ui_space_px(theme, 8.0))
-                    .overflow_hidden()
                     .bg(theme.transparent)
                     .gap(px(0.0));
 
                 let step_header_shell = step_header
+                    .px(ui_space_px(theme, 8.0))
                     .bg(trace_step_header_surface(theme))
                     .rounded(ui_space_px(theme, 8.0))
-                    .min_h(ui_space_px(theme, 32.0));
+                    .min_h(ui_space_px(theme, 28.0));
 
                 if has_detail {
                     let step_panel = panel.clone();
@@ -3798,7 +3818,7 @@ fn render_assistant_message(
                         Button::new(SharedString::from(format!(
                             "step-detail-{msg_idx}-{step_idx}"
                         )))
-                        .ghost()
+                        .custom(trace_disclosure_style(cx, theme))
                         .w_full()
                         .h_auto()
                         .p_0()
@@ -3842,7 +3862,7 @@ fn render_assistant_message(
                         result_preview(detail, TOOL_RESULT_PREVIEW_LINES)
                     };
                     let detail_block = div()
-                        .pl(ui_space_px(theme, 34.0))
+                        .pl(ui_space_px(theme, 32.0))
                         .pr(ui_space_px(theme, 10.0))
                         .pt(ui_space_px(theme, 4.0))
                         .bg(trace_detail_surface(theme))
@@ -3864,7 +3884,7 @@ fn render_assistant_message(
                         let button_label = result_toggle_label(detail, expanded);
                         let detail_toggle_panel = panel.clone();
                         let detail_toggle = div()
-                            .pl(ui_space_px(theme, 34.0))
+                            .pl(ui_space_px(theme, 32.0))
                             .pr(ui_space_px(theme, 10.0))
                             .pt(ui_space_px(theme, 4.0))
                             .pb(ui_space_px(theme, 10.0))
@@ -3967,6 +3987,7 @@ impl Render for AssistantMessageView {
             self.markdown_expanded,
             rendered_markdown,
             theme,
+            cx,
         )
     }
 }
@@ -3989,8 +4010,7 @@ impl AgentPanel {
         if is_system {
             msg_el = msg_el.child(
                 div()
-                    .px(ui_space_px(theme, 6.0))
-                    .py(ui_space_px(theme, 8.0))
+                    .py(ui_space_px(theme, 4.0))
                     .text_size(ui_px(theme, 13.0))
                     .text_color(theme.muted_foreground)
                     .line_height(ui_px(theme, 19.0))
@@ -4088,13 +4108,21 @@ impl AgentPanel {
                     div()
                         .id(ElementId::Name(format!("user-msg-{msg_idx}").into()))
                         .group("user-msg")
+                        // Keep the hover toolbar inside this group's hit region.
+                        .pb(ui_px(theme, 24.0))
+                        .relative()
+                        .w_full()
+                        .min_w_0()
                         .flex()
                         .flex_col()
                         .items_end()
                         .gap(px(3.0))
                         .child(
                             div()
-                                .max_w(rems(22.0))
+                                .debug_selector(|| "agent-user-bubble".into())
+                                .max_w_full()
+                                .min_w_0()
+                                .whitespace_normal()
                                 .px(ui_space_px(theme, 14.0))
                                 .py(ui_space_px(theme, 10.0))
                                 .rounded(ui_space_px(theme, 12.0))
@@ -4103,6 +4131,10 @@ impl AgentPanel {
                         )
                         .child(
                             div()
+                                .debug_selector(|| "agent-user-actions".into())
+                                .absolute()
+                                .right(px(0.0))
+                                .bottom(px(0.0))
                                 .flex()
                                 .items_center()
                                 .gap(px(1.0))
@@ -4116,6 +4148,7 @@ impl AgentPanel {
                                     let content_for_edit = user_content.clone();
                                     div()
                                         .id(ElementId::Name(format!("edit-{msg_idx}").into()))
+                                        .debug_selector(|| "agent-user-edit".into())
                                         .flex()
                                         .items_center()
                                         .justify_center()
@@ -4318,7 +4351,7 @@ impl AgentPanel {
                     };
                     tc_el = tc_el.child(
                         div()
-                            .pl(ui_space_px(theme, 34.0))
+                            .pl(ui_space_px(theme, 32.0))
                             .pr(ui_space_px(theme, 10.0))
                             .pt(px(10.0))
                             .bg(trace_detail_surface(theme))
@@ -4480,6 +4513,16 @@ impl AgentPanel {
         }
 
         if self.state.pending_approvals.is_empty()
+            && self.state.tool_calls.is_empty()
+            && !self.state.messages.last().is_some_and(|message| {
+                message.role == "assistant"
+                    && self.state.streaming
+                    && (!message.steps.is_empty()
+                        || message
+                            .thinking
+                            .as_ref()
+                            .is_some_and(|text| !text.is_empty()))
+            })
             && let Some((_, label)) = self.status_text()
         {
             activity = activity.child(activity_row_header(
@@ -4518,6 +4561,11 @@ impl Render for AgentPanel {
         let messages_content = list(
             self.message_list_state.clone(),
             cx.processor(|this, msg_idx: usize, window, cx| {
+                let is_user = this
+                    .state
+                    .messages
+                    .get(msg_idx)
+                    .is_some_and(|message| message.role == "user");
                 let content = if msg_idx == this.state.messages.len() {
                     this.render_current_activity(cx)
                 } else {
@@ -4525,7 +4573,11 @@ impl Render for AgentPanel {
                 };
                 div()
                     .w_full()
-                    .pb(px(16.0))
+                    .pb(if is_user {
+                        px(0.0)
+                    } else {
+                        ui_px(cx.theme(), 24.0)
+                    })
                     .child(content)
                     .into_any_element()
             }),
@@ -4761,8 +4813,8 @@ impl Render for AgentPanel {
             .gap(ui_space_px(theme, 4.0))
             .w_full()
             .min_w_0()
-            .px(ui_space_px(theme, 14.0))
-            .py(ui_space_px(theme, 10.0))
+            .px(ui_space_px(theme, 16.0))
+            .py(ui_space_px(theme, 8.0))
             .flex_shrink_0()
             .child(provider_picker)
             .child(model_picker);
@@ -4921,11 +4973,15 @@ impl Render for AgentPanel {
                 .flex_1()
                 .min_h_0()
                 .child(
-                    div().size_full().min_h_0().pl(px(14.0)).pr(px(34.0)).child(
-                        messages_content
-                            .opacity(content_reveal)
-                            .pt(vertical_reveal_offset(content_reveal, 10.0)),
-                    ),
+                    div()
+                        .size_full()
+                        .min_h_0()
+                        .px(ui_space_px(theme, 16.0))
+                        .child(
+                            messages_content
+                                .opacity(content_reveal)
+                                .pt(vertical_reveal_offset(content_reveal, 10.0)),
+                        ),
                 )
                 .vertical_scrollbar(&self.message_list_state);
 
@@ -4944,45 +5000,60 @@ impl Render for AgentPanel {
 
             if show_jump_to_latest {
                 messages_container = messages_container.child(
-                    div().absolute().right(px(14.0)).bottom(px(14.0)).child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(px(6.0))
-                            .px(px(10.0))
-                            .py(px(5.0))
-                            .rounded_full()
-                            .cursor_pointer()
-                            .bg(theme.title_bar.opacity(0.84))
-                            .hover(|s| {
-                                s.bg(theme.title_bar.opacity(0.94))
-                                    .text_color(theme.foreground.opacity(0.96))
-                            })
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(|this, _, _, cx| {
+                    div()
+                        .absolute()
+                        .right(ui_space_px(theme, 16.0))
+                        .bottom(ui_space_px(theme, 16.0))
+                        .child(
+                            Button::new("agent-jump-to-latest")
+                                .debug_selector(|| "agent-jump-to-latest".into())
+                                .custom(
+                                    ButtonCustomVariant::new(cx)
+                                        .color(
+                                            theme.background.blend(theme.foreground.opacity(0.065)),
+                                        )
+                                        .hover(
+                                            theme.background.blend(theme.foreground.opacity(0.10)),
+                                        )
+                                        .active(
+                                            theme.background.blend(theme.foreground.opacity(0.14)),
+                                        )
+                                        .foreground(theme.foreground),
+                                )
+                                .xsmall()
+                                .tab_stop(true)
+                                .h(ui_space_px(theme, 30.0))
+                                .p_0()
+                                .rounded(ui_space_px(theme, 8.0))
+                                .accessibility_label("Jump to latest message")
+                                .tooltip("Jump to latest message")
+                                .on_click(cx.listener(|this, _, _, cx| {
                                     this.follow_output = FollowOutputState::PendingJump;
                                     this.scroll_to_bottom();
                                     cx.notify();
-                                }),
-                            )
-                            .child(div().w(px(10.0)).h(px(10.0)).flex_shrink_0())
-                            .child(
-                                div()
-                                    .text_size(px(10.5))
-                                    .line_height(px(11.0))
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .text_color(theme.foreground.opacity(0.86))
-                                    .child("Latest"),
-                            )
-                            .child(
-                                svg()
-                                    .path("phosphor/arrow-line-down.svg")
-                                    .size(ui_icon_px(theme, 10.0))
-                                    .flex_shrink_0()
-                                    .text_color(theme.muted_foreground.opacity(0.8)),
-                            ),
-                    ),
+                                }))
+                                .child(
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .gap(ui_space_px(theme, 6.0))
+                                        .px(ui_space_px(theme, 10.0))
+                                        .child(
+                                            svg()
+                                                .path("phosphor/arrow-line-down.svg")
+                                                .size(ui_icon_px(theme, 14.0))
+                                                .text_color(theme.foreground),
+                                        )
+                                        .child(
+                                            div()
+                                                .text_size(ui_px(theme, 12.0))
+                                                .line_height(ui_px(theme, 18.0))
+                                                .font_weight(FontWeight::MEDIUM)
+                                                .text_color(theme.foreground)
+                                                .child("Latest"),
+                                        ),
+                                ),
+                        ),
                 );
             }
 
@@ -5351,6 +5422,130 @@ mod tests {
         assert!(view.debug_bounds("agent-status-label").is_none());
     }
 
+    #[gpui::test]
+    fn latest_action_fits_the_transcript_and_resumes_tail_following(cx: &mut gpui::TestAppContext) {
+        use gpui::{px, size};
+        con_core::release_channel::init();
+        cx.update(gpui_component::init);
+        for (font_size, width) in [(16.0, 280.0), (24.0, 280.0)] {
+            let (panel, view) = cx.add_window_view(|window, cx| {
+                gpui_component::Theme::update(cx, |theme| theme.font_size = px(font_size));
+                window.set_rem_size(px(font_size));
+                let mut panel = AgentPanel::new(window, cx);
+                panel.set_show_inline_input(true, cx);
+                for index in 0..40 {
+                    panel.state.restore_message(
+                        "assistant",
+                        &format!("Message {index}: inspect the terminal configuration."),
+                        None,
+                        None,
+                    );
+                }
+                panel
+            });
+            view.simulate_resize(size(px(width), px(500.0)));
+            view.update(|_, cx| {
+                panel.update(cx, |panel, cx| {
+                    panel.message_list_state.scroll_to(gpui::ListOffset {
+                        item_ix: 0,
+                        offset_in_item: px(0.0),
+                    });
+                    panel.follow_output = super::FollowOutputState::Detached;
+                    cx.notify();
+                })
+            });
+            view.run_until_parked();
+            let button = view.debug_bounds("agent-jump-to-latest").unwrap();
+            let transcript = view.debug_bounds("agent-transcript-viewport").unwrap();
+            let composer = view.debug_bounds("agent-composer-surface").unwrap();
+            assert!(button.left() > transcript.left());
+            assert!(button.right() < transcript.right());
+            assert!(button.top() >= transcript.top());
+            assert!(button.bottom() < composer.top());
+            view.simulate_click(button.center(), gpui::Modifiers::default());
+            view.run_until_parked();
+            view.update(|_, cx| assert!(panel.read(cx).is_scrolled_near_bottom()));
+            assert!(view.debug_bounds("agent-jump-to-latest").is_none());
+        }
+    }
+
+    #[gpui::test]
+    fn user_message_and_hover_actions_fit_the_shared_transcript_measure(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        use gpui::{px, size};
+        con_core::release_channel::init();
+        cx.update(gpui_component::init);
+        for (font_size, width) in [(16.0, 280.0), (16.0, 640.0), (24.0, 280.0)] {
+            let (panel, view) = cx.add_window_view(|window, cx| {
+                gpui_component::Theme::update(cx, |theme| theme.font_size = px(font_size));
+                window.set_rem_size(px(font_size));
+                let mut panel = AgentPanel::new(window, cx);
+                panel.state.add_message("user", "检查补全路径：/opt/homebrew/share/zsh/site-functions/_alacritty\n\n这个错误来自哪里？");
+                panel.state.complete_response("先检查这个软链接。", None, None);
+                panel
+            });
+            view.simulate_resize(size(px(width), px(1000.0)));
+            let bubble = view.debug_bounds("agent-user-bubble").unwrap();
+            let actions = view.debug_bounds("agent-user-actions").unwrap();
+            let reply = view.debug_bounds("agent-assistant-message").unwrap();
+            assert!(bubble.left() >= reply.left());
+            assert!(bubble.right() <= reply.right());
+            assert!(actions.left() >= reply.left());
+            assert!(actions.right() <= reply.right());
+            assert!(actions.top() >= bubble.bottom());
+            assert!(
+                actions.bottom() <= reply.top(),
+                "hover actions must not overlap the reply"
+            );
+            assert!(reply.right() < px(width));
+            view.simulate_mouse_move(bubble.center(), None, gpui::Modifiers::default());
+            view.run_until_parked();
+            let edit = view.debug_bounds("agent-user-edit").unwrap();
+            view.simulate_mouse_move(edit.center(), None, gpui::Modifiers::default());
+            view.run_until_parked();
+            view.simulate_click(edit.center(), gpui::Modifiers::default());
+            view.update(|_, cx| assert_eq!(panel.read(cx).editing_msg_idx, Some(1)));
+        }
+    }
+
+    #[gpui::test]
+    fn trace_feedback_replaces_duplicate_footer_without_hiding_initial_wait(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        con_core::release_channel::init();
+        cx.update(gpui_component::init);
+        let (panel, view) = cx.add_window_view(AgentPanel::new);
+        view.simulate_resize(gpui::size(gpui::px(320.0), gpui::px(800.0)));
+        view.update(|_, cx| {
+            panel.update(cx, |panel, cx| {
+                panel.add_message("user", "Inspect the shell configuration.", cx);
+            })
+        });
+        view.run_until_parked();
+        assert!(view.debug_bounds("agent-status-label").is_some());
+        view.update(|_, cx| {
+            panel.update(cx, |panel, cx| {
+                panel
+                    .state
+                    .update_thinking("Check the completion symlink first.");
+                cx.notify();
+            })
+        });
+        view.run_until_parked();
+        assert!(view.debug_bounds("agent-run-title").is_some());
+        assert!(view.debug_bounds("agent-status-label").is_none());
+        view.update(|_, cx| {
+            panel.update(cx, |panel, cx| {
+                panel.update_streaming("I will check the symlink.", cx);
+            })
+        });
+        view.run_until_parked();
+        assert!(view.debug_bounds("agent-answer").is_some());
+        assert!(view.debug_bounds("agent-run-title").is_some());
+        assert!(view.debug_bounds("agent-status-label").is_none());
+    }
+
     #[test]
     fn awaiting_response_clears_on_error_completion_and_restore() {
         let mut state = super::PanelState::new();
@@ -5474,6 +5669,16 @@ mod tests {
         );
         let title = view.debug_bounds("agent-run-title").unwrap();
         let summary = view.debug_bounds("agent-run-summary").unwrap();
+        let toggle = view.debug_bounds("agent-run-toggle").unwrap();
+        assert!(
+            toggle.left() >= card.left(),
+            "hover must stay inside the transcript clip"
+        );
+        assert!(toggle.right() <= card.right());
+        assert!(
+            summary.right() < toggle.right(),
+            "summary hover must retain trailing breathing room"
+        );
         assert!(title.right() <= summary.left());
         assert!(title.top() >= card.top());
         assert!(summary.bottom() <= card.bottom());

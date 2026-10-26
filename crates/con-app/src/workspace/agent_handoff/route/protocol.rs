@@ -18,7 +18,7 @@ pub(super) fn check_helper_protocol() -> anyhow::Result<()> {
 fn check_helper_path(cli: &std::path::Path) -> anyhow::Result<()> {
     anyhow::ensure!(
         cli.is_file(),
-        "Handoff cannot start: con-cli is missing beside the Con executable ({}); rebuild Con and con-cli from the same version with `cargo build -p con -p con-cli` or reinstall Con",
+        "Handoff cannot start: con-cli is missing beside the con executable ({}); rebuild con and con-cli from the same version with `cargo build -p con -p con-cli` or reinstall con",
         cli.display()
     );
     let protocol = query_launch_helper_protocol(cli)?;
@@ -32,7 +32,7 @@ fn ensure_helper_protocol_version(protocol: u64) -> anyhow::Result<()> {
     let required = con_core::handoff::LAUNCH_HELPER_PROTOCOL;
     anyhow::ensure!(
         protocol >= u64::from(required),
-        "Handoff needs launch-helper protocol {required}, but the con-cli beside Con speaks {protocol}. Upgrade con-cli and rebuild Con from the same version — refusing to launch."
+        "Handoff needs launch-helper protocol {required}, but the con-cli beside con speaks {protocol}. Upgrade con-cli and rebuild con from the same version — refusing to launch."
     );
     Ok(())
 }
@@ -77,7 +77,7 @@ fn query_launch_helper_protocol_bounded(
                 // stall the gate until that process exits. The detached reader
                 // threads finish whenever the pipes close.
                 anyhow::bail!(
-                    "Handoff cannot start: the con-cli beside Con did not answer the launch-helper protocol query within {timeout:?}. Upgrade con-cli and rebuild Con from the same version — refusing to launch."
+                    "Handoff cannot start: the con-cli beside con did not answer the launch-helper protocol query within {timeout:?}. Upgrade con-cli and rebuild con from the same version — refusing to launch."
                 );
             }
             None => std::thread::sleep(Duration::from_millis(10)),
@@ -91,17 +91,17 @@ fn query_launch_helper_protocol_bounded(
     let stderr = recv_bounded(&stderr_reader, deadline)?;
     anyhow::ensure!(
         stdout.len() <= max_output && stderr.len() <= max_output,
-        "Handoff cannot start: the con-cli beside Con exceeded the {max_output}-byte protocol report limit. Upgrade con-cli and rebuild Con from the same version — refusing to launch."
+        "Handoff cannot start: the con-cli beside con exceeded the {max_output}-byte protocol report limit. Upgrade con-cli and rebuild con from the same version — refusing to launch."
     );
     anyhow::ensure!(
         status.success(),
-        "Handoff cannot start: the con-cli beside Con cannot report its launch-helper protocol (it predates protocol reporting). Upgrade con-cli and rebuild Con from the same version — refusing to launch. {}",
+        "Handoff cannot start: the con-cli beside con cannot report its launch-helper protocol (it predates protocol reporting). Upgrade con-cli and rebuild con from the same version — refusing to launch. {}",
         String::from_utf8_lossy(&stderr).trim()
     );
     serde_json::from_slice::<serde_json::Value>(&stdout)?
         .get("launch_helper_protocol")
         .and_then(serde_json::Value::as_u64)
-        .ok_or_else(|| anyhow::anyhow!("con-cli reported a malformed launch-helper protocol; rebuild Con and con-cli from the same version"))
+        .ok_or_else(|| anyhow::anyhow!("con-cli reported a malformed launch-helper protocol; rebuild con and con-cli from the same version"))
 }
 
 /// Detached reader threads only finish when their pipe closes, so a helper
@@ -209,10 +209,10 @@ fn recv_bounded(
     match reader.recv_timeout(remaining) {
         Ok(result) => Ok(result?),
         Err(mpsc::RecvTimeoutError::Timeout) => anyhow::bail!(
-            "Handoff cannot start: the con-cli beside Con left a descendant holding the protocol report pipe open past the query deadline. Upgrade con-cli and rebuild Con from the same version — refusing to launch."
+            "Handoff cannot start: the con-cli beside con left a descendant holding the protocol report pipe open past the query deadline. Upgrade con-cli and rebuild con from the same version — refusing to launch."
         ),
         Err(mpsc::RecvTimeoutError::Disconnected) => anyhow::bail!(
-            "Handoff cannot start: too many launch-helper protocol queries are stuck on inherited pipes. Upgrade con-cli and rebuild Con from the same version — refusing to launch."
+            "Handoff cannot start: too many launch-helper protocol queries are stuck on inherited pipes. Upgrade con-cli and rebuild con from the same version — refusing to launch."
         ),
     }
 }
