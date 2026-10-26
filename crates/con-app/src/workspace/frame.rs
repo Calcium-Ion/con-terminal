@@ -40,6 +40,17 @@ pub(super) fn canvas_depth_for_layout(
     }
 }
 
+/// Restore the original compact row only for the clean horizontal terminal.
+/// Decorated canvases and every vertical navigation mode keep their 32pt row.
+pub(super) fn caption_row_height(horizontal_navigation: bool, canvas_depth: f32) -> f32 {
+    if horizontal_navigation {
+        let clean_height = 28.0;
+        clean_height + (super::CAPTION_HEIGHT - clean_height) * canvas_depth.clamp(0.0, 1.0)
+    } else {
+        super::CAPTION_HEIGHT
+    }
+}
+
 /// `caption` is the global caption row's presence. Without tabs its controls
 /// sit midway between the window top and the card top, so the row's lower half
 /// is the card's top clearance. Tabs keep the lateral 5pt gap below their selected surface.
@@ -1576,6 +1587,28 @@ mod tests {
             concentric_corners(card, viewport, 16.0, 0.0),
             gpui::Corners::all(px(0.0))
         );
+    }
+
+    #[test]
+    fn clean_caption_reclaims_space_without_changing_decorated_or_vertical_layouts() {
+        let clean = canvas_depth_for_layout(false, false, 0.0, 0.0);
+        assert_eq!(caption_row_height(true, clean), 28.0);
+        for depth in [
+            canvas_depth_for_layout(true, false, 0.0, 0.0),
+            canvas_depth_for_layout(false, true, 0.0, 0.0),
+            canvas_depth_for_layout(false, false, 1.0, 0.0),
+            canvas_depth_for_layout(false, false, 0.0, 1.0),
+        ] {
+            assert_eq!(caption_row_height(true, depth), 32.0);
+        }
+        for progress in [0.0, 0.25, 0.5, 0.75, 1.0] {
+            let opening = canvas_depth_for_layout(false, false, progress, 0.0);
+            let closing = canvas_depth_for_layout(false, false, 0.0, progress);
+            assert_eq!(caption_row_height(true, opening), 28.0 + progress * 4.0);
+            assert_eq!(caption_row_height(true, closing), 28.0 + progress * 4.0);
+            // Includes compact rail, expanded panel, docking and hidden nav.
+            assert_eq!(caption_row_height(false, progress), 32.0);
+        }
     }
 
     #[test]

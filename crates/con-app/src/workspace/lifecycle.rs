@@ -931,6 +931,8 @@ impl ConWorkspace {
             #[cfg(target_os = "macos")]
             canvas_depth_progress: 0.0,
             #[cfg(target_os = "macos")]
+            native_caption_height: CAPTION_HEIGHT,
+            #[cfg(target_os = "macos")]
             canvas_surround: frame::CanvasSurround::default(),
             left_panel_motion: SidebarMotion::new(if session.left_panel_open.unwrap_or(true) {
                 1.0
@@ -1269,10 +1271,15 @@ impl ConWorkspace {
         changed
     }
 
+    #[cfg(target_os = "macos")]
+    pub(super) fn caption_row_height(&self) -> f32 {
+        frame::caption_row_height(!self.vertical_tabs_enabled(), self.canvas_depth_progress)
+    }
+
     pub(super) fn current_top_bar_height(&self) -> f32 {
         #[cfg(target_os = "macos")]
         {
-            TOP_BAR_COMPACT_HEIGHT * self.caption_dock.header
+            self.caption_row_height() * self.caption_dock.header
         }
         #[cfg(not(target_os = "macos"))]
         if self.tab_strip_motion.is_animating() || self.horizontal_tabs_visible() {

@@ -423,6 +423,15 @@ impl Render for ConWorkspace {
                 agent_panel_progress,
             );
             self.canvas_depth_progress = depth;
+            let caption_height = self.caption_row_height();
+            if (caption_height - self.native_caption_height).abs() > 0.001 {
+                if let Some(position) =
+                    crate::settings_panel::traffic_light_position(px(caption_height))
+                {
+                    window.set_traffic_light_position(position);
+                }
+                self.native_caption_height = caption_height;
+            }
             depth
         };
         let tab_strip_progress = self.tab_strip_motion.value(window, cx);
@@ -1277,10 +1286,15 @@ impl Render for ConWorkspace {
         let top_bar = self.render_top_bar(
             window,
             cx,
-            if cfg!(target_os = "macos") {
-                TOP_BAR_COMPACT_HEIGHT
-            } else {
-                top_bar_height
+            {
+                #[cfg(target_os = "macos")]
+                {
+                    self.caption_row_height()
+                }
+                #[cfg(not(target_os = "macos"))]
+                {
+                    top_bar_height
+                }
             },
             tab_strip_progress,
             top_bar_surface_color,
@@ -1658,7 +1672,7 @@ impl Render for ConWorkspace {
                     .top_0()
                     .left_0()
                     .w(px(caption_width))
-                    .h(px(TOP_BAR_COMPACT_HEIGHT))
+                    .h(px(self.caption_row_height()))
                     .child(top_bar),
             );
         }
