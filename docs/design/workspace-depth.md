@@ -66,7 +66,11 @@ Pane exterior corners use one normalized circular alpha mask through GPUI's
 supersampled SVG atlas, reflected into four small tiles. Equal device sizes
 share the same entry across panes, positions and theme colors; tint is applied
 when painting. Keep the curve aligned with the native clip and fine contour,
-not inset as a second outline. Skip tiles that snap to zero size during reveal.
+not inset as a second outline. Skip individual tiles that snap to zero physical size during reveal, in both
+the GPUI painter and the native/shared coverage builder. An empty tile is a
+normal animation endpoint, not a reason to discard other visible corners or
+switch the entire material to an error fallback. Keep real raster failures fatal
+to coverage preparation.
 The mask is geometric coverage, not a full-pane image or a new icon asset.
 Pane titles align to the leading edge and surface tabs use the UI font, without
 a nested track or redundant surface count. Their close and rename actions stay

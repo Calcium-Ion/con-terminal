@@ -902,10 +902,14 @@ pub(crate) fn native_corner_coverage(
     let alpha = chrome_alpha.clamp(0.0, 1.0);
     corner_cutouts(bounds, radii)
         .into_iter()
-        .map(|corner| {
-            let (bounds, _) = corner
-                .presentation(scale)
-                .ok_or_else(|| anyhow::anyhow!("empty corner"))?;
+        // Match CornerCutout::paint: a tile can legitimately disappear after
+        // physical-pixel snapping near an animation endpoint. Omit that tile,
+        // not the coverage of other, still-visible corners on the surface.
+        .filter_map(|corner| {
+            let (bounds, _) = corner.presentation(scale)?;
+            Some((corner, bounds))
+        })
+        .map(|(corner, bounds)| {
             let side = (bounds.size.width.as_f32() * scale).round() as usize;
             anyhow::ensure!(side > 0 && side <= 256, "corner tile exceeds raster budget");
             let key = (side, alpha.to_bits(), corner.mask);
@@ -2022,6 +2026,51 @@ mod tests {
         );
         assert_eq!(masks[0].bounds.origin, point(px(589.0), px(0.0)));
         assert_eq!(masks[1].bounds.origin, point(px(592.0), px(392.0)));
+    }
+
+    #[test]
+    fn subpixel_corners_do_not_discard_other_visible_coverage_tiles() {
+        let bounds = Bounds::new(point(px(0.0), px(28.0)), gpui::size(px(600.0), px(400.0)));
+        for scale in [1.0, 1.5, 2.0] {
+            for alpha in [0.0, 0.25, 0.82, 1.0] {
+                for disappearing in 0..4 {
+                    let mut radii = gpui::Corners::all(px(8.0));
+                    match disappearing {
+                        0 => radii.top_left = px(0.0),
+                        1 => radii.top_right = px(0.0),
+                        2 => radii.bottom_right = px(0.0),
+                        _ => radii.bottom_left = px(0.0),
+                    }
+                    let settled = native_corner_coverage(bounds, radii, scale, alpha).unwrap();
+                    for radius in [0.001, 0.05, 0.24] {
+                        let tiny = px(radius / scale);
+                        match disappearing {
+                            0 => radii.top_left = tiny,
+                            1 => radii.top_right = tiny,
+                            2 => radii.bottom_right = tiny,
+                            _ => radii.bottom_left = tiny,
+                        }
+                        let moving = native_corner_coverage(bounds, radii, scale, alpha).expect(
+                            "a corner that snaps empty must not invalidate visible corners",
+                        );
+                        assert_eq!(moving.len(), 3);
+                        for (moving, settled) in moving.iter().zip(&settled) {
+                            assert_eq!(moving.corner, settled.corner);
+                            assert_eq!(moving.bounds, settled.bounds);
+                            assert_eq!(moving.rgba, settled.rgba);
+                        }
+                    }
+                }
+                assert!(
+                    native_corner_coverage(bounds, gpui::Corners::all(px(0.01)), scale, alpha)
+                        .unwrap()
+                        .is_empty()
+                );
+            }
+        }
+        // Real raster failures must still be reported, rather than skipped.
+        let large = Bounds::new(point(px(0.0), px(0.0)), gpui::size(px(600.0), px(600.0)));
+        assert!(native_corner_coverage(large, gpui::Corners::all(px(200.0)), 2.0, 0.8).is_err());
     }
 
     #[test]
