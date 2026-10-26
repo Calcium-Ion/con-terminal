@@ -223,6 +223,8 @@ pub struct ConWorkspace {
     #[cfg(target_os = "macos")]
     canvas_depth_progress: f32,
     #[cfg(target_os = "macos")]
+    native_caption_height: f32,
+    #[cfg(target_os = "macos")]
     canvas_surround: frame::CanvasSurround,
     agent_panel_width: f32,
     tab_strip_motion: MotionValue,

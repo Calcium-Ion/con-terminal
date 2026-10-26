@@ -1087,7 +1087,7 @@ fn promoting_single_tab_to_tab_strip_requires_deferred_top_chrome_refresh() {
 }
 
 #[test]
-fn macos_tab_count_does_not_resize_the_native_terminal() {
+fn decorated_macos_tab_chrome_keeps_its_shared_height() {
     #[cfg(target_os = "macos")]
     assert_eq!(super::TOP_BAR_COMPACT_HEIGHT, super::TOP_BAR_TABS_HEIGHT);
     #[cfg(not(target_os = "macos"))]

@@ -33,8 +33,12 @@ caption row is 32pt, matching AppKit's titlebar; the traffic lights and the
 22pt controls are both centred in it, leaving 5pt around the controls. Without
 a tab strip, the card starts at the row's bottom edge, so the space below the
 controls equals the space above them. A docked caption gives its row back and
-the card keeps its full 5pt top clearance. The strip's appearance does not
-change caption height or tab/control centering. The native clip, gutter paint and
+the card keeps its full 5pt top clearance. A clean horizontal workspace with one tab, one pane and both sidebars hidden
+uses the original 28pt row. Canvas depth interpolates that row back to 32pt as
+sidebars open; horizontal multi-tab and split canvases stay at 32pt. Vertical
+navigation always keeps its current 32pt caption/docking geometry. Native traffic
+lights and chrome controls follow the same sampled row height. This scoped clean
+mode exception must not change the decorated tab/control centering. The native clip, gutter paint and
 agent panel top use the same top geometry. When that places the pane above the
 caption layout boundary, expand the canvas viewport clip only by that amount
 and retain its content origin with matching padding. The agent column stretches
@@ -62,7 +66,11 @@ Pane exterior corners use one normalized circular alpha mask through GPUI's
 supersampled SVG atlas, reflected into four small tiles. Equal device sizes
 share the same entry across panes, positions and theme colors; tint is applied
 when painting. Keep the curve aligned with the native clip and fine contour,
-not inset as a second outline. Skip tiles that snap to zero size during reveal.
+not inset as a second outline. Skip individual tiles that snap to zero physical size during reveal, in both
+the GPUI painter and the native/shared coverage builder. An empty tile is a
+normal animation endpoint, not a reason to discard other visible corners or
+switch the entire material to an error fallback. Keep real raster failures fatal
+to coverage preparation.
 The mask is geometric coverage, not a full-pane image or a new icon asset.
 Pane titles align to the leading edge and surface tabs use the UI font, without
 a nested track or redundant surface count. Their close and rename actions stay
